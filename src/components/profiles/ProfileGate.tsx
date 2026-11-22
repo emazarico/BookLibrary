@@ -70,7 +70,7 @@ export const ProfileGate: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-hidden bg-[#FAF8F5] dark:bg-[#0F1117]">
+    <div className="min-h-[100dvh] pt-[env(safe-area-inset-top)] pb-[calc(4.5rem+env(safe-area-inset-bottom))] flex flex-col relative overflow-hidden bg-[#FAF8F5] dark:bg-[#0F1117]">
       {/* Warm ambient decorative background */}
       <div
         aria-hidden="true"

@@ -16,6 +16,7 @@ import { useLibrary } from '../../store/LibraryContext';
 import type { AppTab } from '../../types/library';
 import { CloudSyncModal } from '../management/CloudSyncModal';
 import { ProfileSwitcher } from '../profiles/ProfileSwitcher';
+import { MobileNav } from './MobileNav';
 
 interface HeaderProps {
   activeTab: AppTab;
@@ -78,8 +79,8 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onSelectTab }) => {
 
   return (
     <>
-      <header className="sticky top-0 z-30 backdrop-blur-md bg-[#FAF8F5]/85 dark:bg-[#0F1117]/85 border-b border-stone-200/80 dark:border-stone-800/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2 sm:gap-3">
+      <header className="sticky top-0 z-30 pt-[env(safe-area-inset-top)] backdrop-blur-md bg-[#FAF8F5]/90 dark:bg-[#0F1117]/90 border-b border-stone-200/80 dark:border-stone-800/80">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center justify-between gap-2 sm:gap-3">
           {/* Brand */}
           <button
             type="button"
@@ -144,6 +145,9 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onSelectTab }) => {
             <ProfileSwitcher />
           </div>
         </div>
+
+        {/* Mobile Tab Strip kept in active top area above Safari bottom toolbar */}
+        <MobileNav activeTab={activeTab} onSelectTab={onSelectTab} />
       </header>
 
       <CloudSyncModal open={cloudOpen} onClose={() => setCloudOpen(false)} />

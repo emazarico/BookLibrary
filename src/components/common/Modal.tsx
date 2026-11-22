@@ -41,13 +41,13 @@ export const Modal: React.FC<ModalProps> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto bg-stone-950/65 backdrop-blur-sm"
+      className="fixed inset-0 h-[100dvh] z-50 flex items-center justify-center px-3 sm:px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(4rem,calc(env(safe-area-inset-bottom)+3rem))] sm:py-6 overflow-y-auto bg-stone-950/65 backdrop-blur-sm"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
     >
       <div
-        className={`w-full ${maxWidthClass} my-auto max-h-[90dvh] flex flex-col rounded-2xl bg-white dark:bg-[#171A23] border border-stone-200/90 dark:border-stone-800 shadow-2xl overflow-hidden animate-fade-slide`}
+        className={`w-full ${maxWidthClass} my-auto max-h-[calc(100dvh-5.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] sm:max-h-[88dvh] flex flex-col rounded-2xl bg-white dark:bg-[#171A23] border border-stone-200/90 dark:border-stone-800 shadow-2xl overflow-hidden animate-fade-slide`}
         onClick={(e) => e.stopPropagation()}
       >
         {(title || subtitle) && (
@@ -72,7 +72,9 @@ export const Modal: React.FC<ModalProps> = ({
             </button>
           </div>
         )}
-        <div className="overflow-y-auto custom-scrollbar flex-1 min-h-0">{children}</div>
+        <div className="overflow-y-auto overscroll-contain custom-scrollbar flex-1 min-h-0">
+          {children}
+        </div>
       </div>
     </div>,
     document.body,

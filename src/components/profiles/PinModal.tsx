@@ -138,9 +138,9 @@ export const PinModal: React.FC<PinModalProps> = ({ profile, onCancel }) => {
   const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto bg-stone-950/75 backdrop-blur-md">
+    <div className="fixed inset-0 h-[100dvh] z-50 flex items-center justify-center px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(4rem,calc(env(safe-area-inset-bottom)+3rem))] sm:py-6 overflow-y-auto bg-stone-950/75 backdrop-blur-md">
       <div
-        className={`w-full max-w-sm my-auto rounded-3xl bg-white dark:bg-[#171A23] border border-stone-200 dark:border-stone-800 shadow-2xl p-6 sm:p-7 animate-fade-slide ${
+        className={`w-full max-w-sm my-auto max-h-[calc(100dvh-5.5rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-y-auto overscroll-contain rounded-3xl bg-white dark:bg-[#171A23] border border-stone-200 dark:border-stone-800 shadow-2xl p-6 sm:p-7 animate-fade-slide ${
           shaking ? 'animate-shake' : ''
         }`}
       >

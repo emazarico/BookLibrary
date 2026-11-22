@@ -242,7 +242,7 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex justify-end bg-stone-950/60 backdrop-blur-sm"
+      className="fixed inset-0 h-[100dvh] z-50 flex justify-end bg-stone-950/60 backdrop-blur-sm"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -252,7 +252,7 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
         className="w-full max-w-lg h-full bg-white dark:bg-[#151821] border-l border-stone-200 dark:border-stone-800 shadow-2xl flex flex-col overflow-hidden animate-fade-slide"
       >
         {/* Ambient Header */}
-        <div className="relative px-6 pt-6 pb-5 border-b border-stone-100 dark:border-stone-800 overflow-hidden shrink-0">
+        <div className="relative px-6 pt-[max(1.5rem,calc(env(safe-area-inset-top)+0.75rem))] pb-5 border-b border-stone-100 dark:border-stone-800 overflow-hidden shrink-0">
           {cleanCover && (
             <img
               src={cleanCover}
@@ -349,7 +349,7 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar p-6 space-y-6">
           {/* Status Switcher */}
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-2">
@@ -509,7 +509,7 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
           <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-900/60 border border-stone-200/70 dark:border-stone-800 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
-                Ownership & Lending
+                Ownership &amp; Lending
               </p>
               {book.ownership && (
                 <button
@@ -735,7 +735,7 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
           {/* Inline Tags Manager */}
           <div className="space-y-2.5">
             <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
-              Tags & Wishlist
+              Tags &amp; Wishlist
             </p>
             <div className="flex flex-wrap items-center gap-1.5">
               {book.tags.map((t) => (
@@ -908,8 +908,8 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
           </div>
         </div>
 
-        {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-stone-100 dark:border-stone-800 flex items-center justify-between shrink-0 bg-stone-50/70 dark:bg-stone-900/40">
+        {/* Footer Actions — padded above iOS Safari bottom toolbar zone */}
+        <div className="px-6 pt-3.5 pb-[max(4rem,calc(env(safe-area-inset-bottom)+3rem))] sm:py-4 border-t border-stone-100 dark:border-stone-800 flex items-center justify-between shrink-0 bg-stone-50/70 dark:bg-stone-900/40">
           <button
             type="button"
             onClick={() => {

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ToastContainer } from './components/common/ToastContainer';
 import { Header } from './components/layout/Header';
-import { MobileNav } from './components/layout/MobileNav';
 import { LibraryView } from './components/library/LibraryView';
 import { PdfExportModal } from './components/management/PdfExportModal';
 import { PrintReportView } from './components/management/PrintReportView';
@@ -84,13 +83,13 @@ const AppShell: React.FC = () => {
   return (
     <>
       <div
-        className={`min-h-screen flex flex-col bg-[#FAF8F5] dark:bg-[#0F1117] text-stone-900 dark:text-stone-100 ${
+        className={`min-h-[100dvh] flex flex-col bg-[#FAF8F5] dark:bg-[#0F1117] text-stone-900 dark:text-stone-100 ${
           printOptions ? 'print:hidden' : ''
         }`}
       >
         <Header activeTab={activeTab} onSelectTab={setActiveTab} />
 
-        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-6 pb-24 md:pb-12">
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-5 sm:pt-6 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-12">
           {activeTab === 'library' && (
             <LibraryView
               onNavigateTab={setActiveTab}
@@ -106,7 +105,6 @@ const AppShell: React.FC = () => {
           )}
         </main>
 
-        <MobileNav activeTab={activeTab} onSelectTab={setActiveTab} />
         <ToastContainer />
       </div>
 
