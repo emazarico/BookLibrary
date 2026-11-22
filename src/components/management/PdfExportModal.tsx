@@ -5,7 +5,9 @@ import type { BookFormat, ReadingStatus } from '../../types/library';
 import {
   buildPdfReportData,
   buildStandaloneReportHtml,
+  type PdfReportLayout,
   type PdfReportOptions,
+  type PdfReportTheme,
 } from '../../utils/pdfReport';
 import { Modal } from '../common/Modal';
 
@@ -40,7 +42,9 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
   ]);
   const [formatFilter, setFormatFilter] = useState<'all' | BookFormat>('all');
   const [tagFilter, setTagFilter] = useState('');
-  const [layout, setLayout] = useState<'cards' | 'table'>('cards');
+  const [layout, setLayout] = useState<PdfReportLayout>('cards');
+  const [theme, setTheme] = useState<PdfReportTheme>('classic');
+  const [handoutBookId, setHandoutBookId] = useState('');
   const [orientation, setOrientation] = useState<'portrait' | 'landscape'>('portrait');
   const [includeSummaryAndChart, setIncludeSummaryAndChart] = useState(true);
   const [includeTimeline, setIncludeTimeline] = useState(true);
@@ -72,7 +76,7 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
     return Array.from(tags).sort((a, b) => a.localeCompare(b));
   }, [db.books, activeProfiles, selectedProfileIds]);
 
-  const options: PdfReportOptions = useMemo(
+  const baseFilterOptions: PdfReportOptions = useMemo(
     () => ({
       profileIds: selectedProfileIds,
       dateFrom,
@@ -81,6 +85,7 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
       formatFilter,
       tagFilter,
       layout,
+      theme,
       orientation,
       includeSummaryAndChart,
       includeTimeline,
@@ -96,6 +101,7 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
       formatFilter,
       tagFilter,
       layout,
+      theme,
       orientation,
       includeSummaryAndChart,
       includeTimeline,
@@ -105,7 +111,25 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
     ],
   );
 
-  const previewData = useMemo(() => buildPdfReportData(db, options), [db, options]);
+  const previewData = useMemo(
+    () => buildPdfReportData(db, baseFilterOptions),
+    [db, baseFilterOptions],
+  );
+
+  const effectiveHandoutBookId = useMemo(() => {
+    if (previewData.books.length === 0) return '';
+    return previewData.books.some((b) => b.id === handoutBookId)
+      ? handoutBookId
+      : previewData.books[0].id;
+  }, [previewData.books, handoutBookId]);
+
+  const options: PdfReportOptions = useMemo(
+    () => ({
+      ...baseFilterOptions,
+      handoutBookId: layout === 'handout' ? effectiveHandoutBookId : undefined,
+    }),
+    [baseFilterOptions, layout, effectiveHandoutBookId],
+  );
 
   const toggleProfile = (id: string) => {
     setSelectedProfileIds((prev) =>
@@ -159,10 +183,10 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
       open={open}
       onClose={onClose}
       title="Export Library to PDF"
-      subtitle="Choose readers, date window, format/tags, and sections to capture."
+      subtitle="Choose readers, date window, theme, layout, and sections to capture."
       maxWidthClass="max-w-2xl"
     >
-      <div className="p-5 space-y-5">
+      <div className="p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] space-y-5">
         {/* Title */}
         <div>
           <label className="block text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-1">
@@ -291,8 +315,8 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
           </div>
         </div>
 
-        {/* Format, Tag, Layout, Orientation */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Format, Tag, Theme, Layout, Orientation */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wider text-stone-400 mb-1">
               Format
@@ -333,11 +357,29 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
             </label>
             <select
               value={layout}
-              onChange={(e) => setLayout(e.target.value as 'cards' | 'table')}
+              onChange={(e) => setLayout(e.target.value as PdfReportLayout)}
               className="w-full px-2.5 py-2 rounded-xl bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-xs font-semibold outline-none"
             >
               <option value="cards">Visual Cards</option>
               <option value="table">Compact Table</option>
+              <option value="poster">Cover-Grid Poster</option>
+              <option value="checklist">Inventory Checklist</option>
+              <option value="handout">Book Club Handout</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-stone-400 mb-1">
+              Theme
+            </label>
+            <select
+              value={theme}
+              onChange={(e) => setTheme(e.target.value as PdfReportTheme)}
+              className="w-full px-2.5 py-2 rounded-xl bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-xs font-semibold outline-none"
+            >
+              <option value="classic">Classic Serif</option>
+              <option value="modern">Modern Indigo</option>
+              <option value="minimal">Minimal Ink-Saver</option>
             </select>
           </div>
 
@@ -356,21 +398,51 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
           </div>
         </div>
 
+        {/* Featured Book Picker (Book Club Handout) */}
+        {layout === 'handout' && previewData.books.length > 0 && (
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-1">
+              Featured Book for Discussion Handout
+            </label>
+            <select
+              value={effectiveHandoutBookId}
+              onChange={(e) => setHandoutBookId(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-stone-50 dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-xs font-semibold text-stone-900 dark:text-stone-100 outline-none"
+            >
+              {previewData.books.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.title} — {b.author}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Sections */}
         <div className="grid grid-cols-2 gap-2.5 text-xs">
-          <label className="flex items-center gap-2 p-2.5 rounded-xl bg-stone-50 dark:bg-stone-900/60 border border-stone-200/80 dark:border-stone-800 cursor-pointer">
+          <label
+            className={`flex items-center gap-2 p-2.5 rounded-xl bg-stone-50 dark:bg-stone-900/60 border border-stone-200/80 dark:border-stone-800 ${
+              layout === 'handout' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+            }`}
+          >
             <input
               type="checkbox"
               checked={includeSummaryAndChart}
+              disabled={layout === 'handout'}
               onChange={(e) => setIncludeSummaryAndChart(e.target.checked)}
               className="accent-amber-600"
             />
-            <span className="font-medium">Summary KPIs & Chart</span>
+            <span className="font-medium">Summary KPIs &amp; Chart</span>
           </label>
-          <label className="flex items-center gap-2 p-2.5 rounded-xl bg-stone-50 dark:bg-stone-900/60 border border-stone-200/80 dark:border-stone-800 cursor-pointer">
+          <label
+            className={`flex items-center gap-2 p-2.5 rounded-xl bg-stone-50 dark:bg-stone-900/60 border border-stone-200/80 dark:border-stone-800 ${
+              layout === 'handout' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+            }`}
+          >
             <input
               type="checkbox"
               checked={includeTimeline}
+              disabled={layout === 'handout'}
               onChange={(e) => setIncludeTimeline(e.target.checked)}
               className="accent-amber-600"
             />
@@ -383,7 +455,7 @@ export const PdfExportModal: React.FC<PdfExportModalProps> = ({
               onChange={(e) => setIncludeNotes(e.target.checked)}
               className="accent-amber-600"
             />
-            <span className="font-medium">Personal Notes</span>
+            <span className="font-medium">Personal Notes &amp; Reviews</span>
           </label>
           <label className="flex items-center gap-2 p-2.5 rounded-xl bg-stone-50 dark:bg-stone-900/60 border border-stone-200/80 dark:border-stone-800 cursor-pointer">
             <input

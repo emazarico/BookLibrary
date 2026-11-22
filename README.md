@@ -8,15 +8,16 @@ A local-first, multi-reader household book & audiobook library tracker PWA built
 - **Parental / Household Admin, PIN Recovery & Badge Rewards**: Designate Parent/Admin profiles who can unlock forgotten reader PINs right from the PIN keypad (*"Forgot PIN? Ask Household Admin"*), manage household roles, and configure custom milestone **Rewards** per reader.
 - **Dynamic 3D Book Cards + Custom Cover Upload/Paste**: Tactile tilted book covers with spine sheen, page-edge thickness, CORS-free ambient blurred cover aura, deterministic clothbound fallbacks, and WebP-compressed custom cover uploads / clipboard pastes stored in IndexedDB (`idb-cover:...`).
 - **Dual Catalog Search (Open Library + Google Books) & Edition Switcher**: Language-matched search with Google Books fallback (`searchBooksCombined`) for missing covers/synopses/page counts, expandable per-work **Editions & ISBN switcher** in `Search & Add`, and duplicate detection warnings across your own and household shelves before adding.
-- **Book Language, Series Grouping, Want-to-Read Notes & Final Reviews**: Track per-book language (`English` default, filterable), multi-volume `Series #N` grouping with completion bars (**By Series** view), `Recommended By` / `Why I Want to Read` comments, and dedicated **Final Reviews** featured in the **Reviews** tab in `My Library`.
+- **Batch ISBN Barcode Scanning Queue**: Switch between single-book scanning and continuous **Batch Queue** scanning (`html5-qrcode`) or multi-ISBN paste in `Search & Add`, with async metadata lookup, duplicate checks, and bulk shelf/status/format/ownership/tag assignment.
+- **Book Language, Series Grouping, Want-to-Read Notes, Reviews & Re-Reads**: Track per-book language (`English` default, filterable), multi-volume `Series #N` grouping (**By Series**), `Recommended By` / `Why I Want to Read` comments, **Final Reviews** (**Reviews** tab), and multi-cycle **Re-Read History** (*Start Re-Read* + past read spans).
 - **Ownership Tags, Library Due Dates & Physical Lending Tracker**: Tag books as `Owned`, `Public Library`, `Borrowed`, or `Other` with source notes, due-date / overdue warning badges, and 1-click *Lend Out / Mark Returned* tracking.
 - **Family Wishlist & Household Recommendations**: Send book recommendations directly onto another household member's `#wishlist` / `Want to Read` queue, and browse the household-wide **Family Wishlist** modal with 1-click *Add to My Wishlist*.
 - **Flexible Progress Tracking (`Pages`, `Chapters`, `Duration hh:mm`)**: Track reading progress by pages, chapter numbers (with optional unknown totals), or `hh:mm` audio timestamps, and optionally capture a star rating + final review when finishing a session.
-- **Timeline, Milestones & Reading Badges**: Interactive monthly Pages / Books bar chart, KPI cards with yearly book goal ring, reading streak tracking, 9 unlockable **Milestones & Reading Badges** with optional parent reward notes, and dated session log.
-- **Configurable PDF & Printable HTML Reports**: Export customized library reports filtered by reader(s), date range, reading status, format, and tags — with optional summary KPIs, monthly SVG chart, timeline, personal notes, and reading log table.
-- **Portable Import & Export**: Lossless BookLibrary Household JSON, single-profile JSON, Legacy v3 JSON migration, Goodreads CSV (preserving `My Review` vs `Private Notes` and `Binding`), StoryGraph CSV import, and Reading Log CSV export.
-- **Google Drive Household Sync**: Zero-backend, `$0` cloud sync storing all profiles, shelves, books, and reading logs in a single shared JSON file in Google Drive with Last-Write-Wins (LWW) per-record merge.
-- **Modern ISBN Camera Scanner & PWA**: `html5-qrcode` barcode scanner + offline-ready PWA shell.
+- **Rich Timeline, Calendar Heatmap & Analytics**: Interactive monthly Pages / Books bar chart, KPI cards with yearly book goal ring, reading streak tracking, 365-day / annual **Daily Reading Activity Heatmap**, **Format / Tag / Rating / Pace Breakdown Charts**, 9 unlockable **Milestones & Reading Badges**, and dated session log.
+- **Customizable PDF & Printable HTML Reports + CLI Renderer**: Export reports filtered by reader(s), date range, status, format, and tags across 3 themes (`Classic Serif`, `Modern Indigo`, `Minimal Ink-Saver`) and 5 layouts (`Visual Cards`, `Compact Table`, `Cover-Grid Poster`, `Inventory Checklist`, and single-book `Book Club Handout`), or render multi-page yearbooks offline via `npm run pdf:cli`.
+- **Portable Import & Export**: Lossless BookLibrary Household JSON, single-profile JSON, Legacy v3 JSON migration, Goodreads CSV (`My Review` vs `Private Notes` & `Binding`), StoryGraph CSV, **Audible Listening/Library CSV** (with session log import), **Libby Timeline JSON/CSV**, **Kindle `My Clippings.txt`**, and Reading Log CSV export.
+- **High-Capacity IndexedDB Storage + Google Drive Sync**: Stores your household database in IndexedDB (`booklibrary_storage_v1`) with automatic `localStorage` fallback/mirroring below 4 MB, plus zero-backend `$0` Google Drive cloud sync with Last-Write-Wins (LWW) per-record merge.
+- **Mobile-Ready PWA**: Offline-capable PWA shell engineered to keep navigation & modals well clear of mobile Safari bottom toolbars.
 
 ---
 
@@ -32,6 +33,17 @@ Run tests and production build:
 ```bash
 npm test
 npm run build
+```
+
+Generate a printable HTML or Playwright PDF yearbook from an exported JSON backup:
+
+```bash
+# Standalone printable HTML (no extra dependencies needed):
+npm run pdf:cli -- --input booklibrary-household.json --layout poster --theme modern --html-only --output yearbook.html
+
+# Headless Chromium PDF (install temporary playwright package first):
+# npm install --no-save playwright && npx playwright install chromium
+npm run pdf:cli -- --input booklibrary-household.json --layout cards --theme classic --output yearbook.pdf
 ```
 
 ---

@@ -154,4 +154,55 @@ describe('PDF report filtering & standalone HTML generation', () => {
     expect(html).toContain('Reading Timeline');
     expect(html).toContain('Reading Log Sessions');
   });
+
+  it('renders poster layout with modern theme styling', () => {
+    const db = makeFixtureDb();
+    const opts: PdfReportOptions = {
+      ...baseOptions,
+      layout: 'poster',
+      theme: 'modern',
+    };
+    const report = buildPdfReportData(db, opts);
+    const html = buildStandaloneReportHtml(report, opts);
+
+    expect(html).toContain('data-layout="poster"');
+    expect(html).toContain('data-theme="modern"');
+    expect(html).toContain('poster-grid');
+    expect(html).toContain('#4f46e5');
+  });
+
+  it('renders checklist layout with minimal theme styling', () => {
+    const db = makeFixtureDb();
+    const opts: PdfReportOptions = {
+      ...baseOptions,
+      layout: 'checklist',
+      theme: 'minimal',
+    };
+    const report = buildPdfReportData(db, opts);
+    const html = buildStandaloneReportHtml(report, opts);
+
+    expect(html).toContain('data-layout="checklist"');
+    expect(html).toContain('data-theme="minimal"');
+    expect(html).toContain('<table class="checklist">');
+    expect(html).toContain('☐');
+  });
+
+  it('renders single-book handout layout scoped to handoutBookId with prompts and lined workspace', () => {
+    const db = makeFixtureDb();
+    const opts: PdfReportOptions = {
+      ...baseOptions,
+      layout: 'handout',
+      theme: 'classic',
+      handoutBookId: 'b-audio',
+    };
+    const report = buildPdfReportData(db, opts);
+    const html = buildStandaloneReportHtml(report, opts);
+
+    expect(html).toContain('data-layout="handout"');
+    expect(html).toContain('Book Club Discussion Sheet');
+    expect(html).toContain('Project Hail Mary');
+    expect(html).toContain('Discussion Prompts');
+    expect(html).toContain('class="writing-line"');
+    expect(html).not.toContain('Circe');
+  });
 });

@@ -21,9 +21,9 @@ This document tracks prioritized ideas to evolve BookLibrary beyond v0.1.0 while
 
 ## P2 — Reading Habits & Rich Analytics
 - **Built-In Reading / Listening Stopwatch Timer**: Start/pause a live session timer directly from a book card; stopping auto-fills elapsed duration (`hh:mm`) or prompts for page/chapter reached.
-- **Daily Reading Calendar Heatmap**: GitHub-style 365-day activity heatmap showing pages, chapters, and audio minutes read per day.
-- **Genre, Format & Tag Breakdown Charts**: Donut/bar breakdown of finished books by tag, format (`Print` vs `E-book` vs `Audiobook`), rating distribution, and reading pace (pages/hour or books/month).
-- **Re-Read Tracking**: Support multiple start/finish date spans and session groups per book rather than a single `dateStarted` / `dateFinished` pair.
+- [x] **Daily Reading Calendar Heatmap** ✅: GitHub-style 365-day / annual activity heatmap (`ReadingHeatmap`) showing pages, chapters, and audio minutes read per day with interactive hover & mobile tap details.
+- [x] **Genre, Format & Tag Breakdown Charts** ✅: SVG format donut (`Print` vs `E-book` vs `Audiobook`), top non-meta tag distribution bars, rating buckets, and reading pace KPIs (`BreakdownCharts`).
+- [x] **Re-Read Tracking** ✅: Full `readHistory: ReadSessionSpan[]` and `readCycle` support, cycle-aware monthly stats & timeline completions, and *Start Re-Read* / *Read History* controls in `BookDetailDrawer`.
 - **Quotes & Highlights Vault**: Dedicated searchable tab for favorite quotes, page/timestamp citations, and exportable quote cards.
 
 ## P3 — Family & Household Features (Completed ✅)
@@ -39,13 +39,13 @@ This document tracks prioritized ideas to evolve BookLibrary beyond v0.1.0 while
 - **Automatic Local Backup Snapshots**: Keep rolling weekly snapshots in IndexedDB with 1-click rollback.
 - **Offline Cover Caching via Service Worker**: Cache fetched Open Library covers in browser Cache Storage so offline shelves retain full artwork.
 
-## P5 — Import, Export & Print
-- **Batch ISBN Barcode Scanning Queue**: Scan a whole stack of books continuously into a staging tray, then bulk-assign shelf/status/tags in one click.
-- **Audible, Libby & Kindle Import Helpers**: Parsers for Audible listening history CSV, Libby timeline JSON/CSV, and Kindle `My Clippings.txt`.
-- **Customizable PDF Themes & Book Club Handouts**: Choose cover-grid poster mode, compact inventory checklist, or single-book discussion sheet layouts in `PdfExportModal`.
-- **Optional CLI PDF Renderer**: Headless Playwright script for generating multi-page family yearbooks straight from exported household JSON.
+## P5 — Import, Export & Print (Completed ✅)
+- [x] **Batch ISBN Barcode Scanning Queue** ✅: Switch between `Single Scan` and `Batch Queue` inside `BarcodeScannerModal` (continuous debounced camera scanning or multi-ISBN paste), look up & deduplicate asynchronously, and bulk-assign shelf/status/format/ownership/tags in one click.
+- [x] **Audible, Libby & Kindle Import Helpers** ✅: Auto-detect and import Audible Listening/Library CSV (generating duration `ReadingLog`s), Libby Timeline JSON/CSV, and Kindle `My Clippings.txt` alongside Goodreads & StoryGraph CSVs.
+- [x] **Customizable PDF Themes & Book Club Handouts** ✅: Support `Classic Serif`, `Modern Indigo`, and `Minimal Ink-Saver` themes plus `Visual Cards`, `Compact Table`, `Cover-Grid Poster`, `Inventory Checklist`, and single-book `Book Club Handout` discussion sheets in `PdfExportModal`, `PrintReportView`, and standalone HTML exports.
+- [x] **Optional CLI PDF Renderer** ✅: Standalone `scripts/render-pdf.mjs` (`npm run pdf:cli`) supporting `--html-only` and headless Playwright PDF generation straight from exported household or profile JSON.
 
 ## P6 — Architecture & Scale
 - **Code-Split Heavy Dependencies**: Lazy-load `html5-qrcode` via dynamic `import()` inside `BarcodeScannerModal` so the main JS bundle stays under ~300 kB gzipped.
-- **IndexedDB Storage Engine**: Migrate from `localStorage` (~5 MB ceiling) to IndexedDB (`idb`) to support 10,000+ books and binary cover thumbnails smoothly.
+- [x] **IndexedDB Storage Engine** ✅: High-capacity IndexedDB persistence (`booklibrary_storage_v1`) with synchronous `localStorage` mirror below 4 MB (`saveDatabaseWithFallback`), seamless auto-migration from `localStorage`, and live storage engine/size readout in **Shelves & Data**.
 - **Automated Playwright E2E Suite**: Headless CI checks covering profile switching, PIN recovery, Open Library search, session logging, and print preview rendering.
