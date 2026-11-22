@@ -3,6 +3,7 @@ import {
   BookOpen,
   Edit3,
   Heart,
+  History,
   Layers,
   LayoutGrid,
   Library,
@@ -60,6 +61,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     activeProfile,
     profileShelves,
     profileBooks,
+    legacyV3Raw,
+    dismissLegacyV3Banner,
     addToast,
   } = useLibrary();
 
@@ -242,7 +245,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
 
   const shelfGroups = useMemo(() => {
     if (groupMode !== 'shelf') return [];
-    const visibleShelves = [...profileShelves].sort((a, b) => a.sortOrder - b.sortOrder);
+    const visibleShelves = profileShelves
+      .filter((s) => s.visible)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
     const groups = visibleShelves
       .map((shelf) => ({
         id: shelf.id,
@@ -251,9 +256,9 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       }))
       .filter((g) => g.books.length > 0);
 
-    const shelfIdSet = new Set(profileShelves.map((s) => s.id));
+    const visibleShelfIdSet = new Set(visibleShelves.map((s) => s.id));
     const unshelved = filteredBooks.filter(
-      (b) => !b.shelfIds.some((id) => shelfIdSet.has(id)),
+      (b) => !b.shelfIds.some((id) => visibleShelfIdSet.has(id)),
     );
     if (unshelved.length > 0) {
       groups.push({ id: '__unshelved__', name: 'Unshelved', books: unshelved });
@@ -403,6 +408,48 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         className="hidden"
       />
 
+      {/* Legacy v3 Migration Banner */}
+      {legacyV3Raw && (
+        <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <History className="w-5 h-5 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                Found legacy v3 library data in browser storage
+              </p>
+              <p className="text-xs text-stone-600 dark:text-stone-400">
+                Migrate your older shelves and books into {activeProfile?.name}&apos;s library.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() =>
+                setImportPreview(
+                  inspectImportFile(
+                    'legacy-v3-browser.json',
+                    legacyV3Raw,
+                    db,
+                    activeProfile?.id || null,
+                  ),
+                )
+              }
+              className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold cursor-pointer"
+            >
+              Preview &amp; Migrate
+            </button>
+            <button
+              type="button"
+              onClick={dismissLegacyV3Banner}
+              className="px-2 py-1.5 text-xs text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -450,7 +497,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-[#171A23] border border-stone-200 dark:border-stone-800 hover:border-amber-400 text-sm font-semibold text-stone-700 dark:text-stone-200 cursor-pointer"
             >
               <Search className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              <span>Find & Add</span>
+              <span>Find &amp; Add</span>
             </button>
           )}
 

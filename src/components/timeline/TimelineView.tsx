@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Award,
   BookOpenCheck,
   Calendar,
   Download,
   Flame,
+  Gift,
   Pencil,
   Plus,
   Printer,
@@ -14,6 +16,7 @@ import {
 import { exportReadingLogsCsv } from '../../services/importExport';
 import { useLibrary } from '../../store/LibraryContext';
 import type { Book } from '../../types/library';
+import { computeReadingBadges } from '../../utils/badges';
 import { formatMinutesHuman, formatReadingLogBadge } from '../../utils/progress';
 import {
   buildTimelineGroups,
@@ -73,6 +76,15 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ onOpenPdfExport }) =
   const summary = useMemo(
     () => computeReadingSummary(profileBooks, profileLogs, yearFilter, includeBackfill),
     [profileBooks, profileLogs, yearFilter, includeBackfill],
+  );
+
+  const badges = useMemo(
+    () => computeReadingBadges(profileBooks, profileLogs, activeProfile?.badgeRewards),
+    [profileBooks, profileLogs, activeProfile?.badgeRewards],
+  );
+  const unlockedCount = useMemo(
+    () => badges.filter((b) => b.unlocked).length,
+    [badges],
   );
 
   const totalAudioMinutes = useMemo(() => {
@@ -141,7 +153,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ onOpenPdfExport }) =
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="font-serif-display text-2xl sm:text-3xl font-bold text-stone-900 dark:text-stone-100">
-            Reading Timeline & Log
+            Reading Timeline &amp; Log
           </h1>
           <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
             Monthly pages read, reading streaks, and chronological completion history.
@@ -310,7 +322,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ onOpenPdfExport }) =
         {/* KPI 4: Avg Rating & Avg Length */}
         <div className="p-4 rounded-3xl bg-white dark:bg-[#171A23] border border-stone-200/90 dark:border-stone-800">
           <p className="text-xs font-semibold uppercase tracking-wider text-stone-400">
-            Ratings & Length
+            Ratings &amp; Length
           </p>
           <p className="font-serif-display text-2xl font-bold text-stone-900 dark:text-stone-100 mt-1 flex items-center gap-1.5">
             <Star className="w-5 h-5 fill-amber-400 text-amber-400" />
@@ -385,6 +397,102 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ onOpenPdfExport }) =
         />
       </section>
 
+      {/* Milestones & Reading Badges (P3.3) */}
+      <section className="p-5 rounded-3xl bg-white dark:bg-[#171A23] border border-stone-200/90 dark:border-stone-800 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+              <Award className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="font-serif-display text-lg font-bold text-stone-900 dark:text-stone-100">
+                Milestones &amp; Reading Badges
+              </h2>
+              <p className="text-xs text-stone-500 dark:text-stone-400">
+                Parents can configure reward notes in Parent / Admin.
+              </p>
+            </div>
+          </div>
+
+          <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/20 self-start sm:self-auto">
+            {unlockedCount} / {badges.length} unlocked
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {badges.map((badge) => (
+            <div
+              key={badge.id}
+              className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between gap-2.5 ${
+                badge.unlocked
+                  ? 'bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-emerald-500/10 border-amber-500/35 shadow-xs'
+                  : 'bg-stone-50/80 dark:bg-stone-900/50 border-stone-200/80 dark:border-stone-800'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 ${
+                    badge.unlocked
+                      ? 'bg-amber-500/20'
+                      : 'bg-stone-200/70 dark:bg-stone-800 opacity-60 grayscale-[35%]'
+                  }`}
+                >
+                  {badge.emoji}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <h3 className="font-serif-display font-bold text-sm text-stone-900 dark:text-stone-100 truncate">
+                      {badge.title}
+                    </h3>
+                    {badge.unlocked && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 shrink-0">
+                        Unlocked
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5 leading-snug">
+                    {badge.description}
+                  </p>
+                </div>
+              </div>
+
+              {!badge.unlocked && (
+                <div>
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-stone-500 dark:text-stone-400 mb-1 tabular-nums">
+                    <span>
+                      {badge.current.toLocaleString()} / {badge.target.toLocaleString()}{' '}
+                      {badge.unitLabel}
+                    </span>
+                    <span>{badge.progressPct}%</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-stone-200 dark:bg-stone-800 overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-amber-500 transition-all"
+                      style={{ width: `${badge.progressPct}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {badge.rewardNote && (
+                <div
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-medium flex items-start gap-1.5 border ${
+                    badge.unlocked
+                      ? 'bg-rose-500/10 text-rose-800 dark:text-rose-200 border-rose-500/25'
+                      : 'bg-amber-500/8 text-amber-800 dark:text-amber-300 border-amber-500/20'
+                  }`}
+                >
+                  <Gift className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span className="leading-snug">
+                    <strong>Reward:</strong> {badge.rewardNote}
+                  </span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Timeline vs Reading Log Tabs */}
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -398,7 +506,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ onOpenPdfExport }) =
                   : 'text-stone-500 dark:text-stone-400'
               }`}
             >
-              <BookOpenCheck className="w-4 h-4" /> Reading Timeline ({timelineGroups.reduce((s, g) => s + g.books.length, 0)})
+              <BookOpenCheck className="w-4 h-4" /> Reading Timeline (
+              {timelineGroups.reduce((s, g) => s + g.books.length, 0)})
             </button>
             <button
               type="button"
@@ -505,9 +614,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ onOpenPdfExport }) =
                               {book.dateFinished || ''}
                             </p>
                           )}
-                          {book.notes && (
+                          {(book.review || book.notes) && (
                             <p className="text-xs italic text-stone-600 dark:text-stone-300 line-clamp-1 mt-1">
-                              &ldquo;{book.notes}&rdquo;
+                              &ldquo;{book.review || book.notes}&rdquo;
                             </p>
                           )}
                         </div>

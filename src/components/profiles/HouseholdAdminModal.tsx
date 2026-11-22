@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
+  Gift,
   KeyRound,
   Lock,
   Pencil,
@@ -11,6 +12,7 @@ import {
 import { useLibrary } from '../../store/LibraryContext';
 import type { UserProfile } from '../../types/library';
 import { isProfileAdmin } from '../../utils/admin';
+import { READING_BADGE_DEFINITIONS } from '../../utils/badges';
 import { verifyPin } from '../../utils/crypto';
 import { AVATAR_THEME_MAP } from '../../utils/themes';
 import { Modal } from '../common/Modal';
@@ -32,6 +34,7 @@ export const HouseholdAdminModal: React.FC<HouseholdAdminModalProps> = ({ open, 
     updateProfile,
     setProfileRole,
     deleteProfile,
+    addToast,
   } = useLibrary();
 
   const [verifiedAdminId, setVerifiedAdminId] = useState<string | null>(null);
@@ -44,6 +47,9 @@ export const HouseholdAdminModal: React.FC<HouseholdAdminModalProps> = ({ open, 
   const [newPinDraft, setNewPinDraft] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
 
+  const [rewardsTargetId, setRewardsTargetId] = useState<string | null>(null);
+  const [rewardDrafts, setRewardDrafts] = useState<Record<string, string>>({});
+
   const [editTarget, setEditTarget] = useState<UserProfile | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -54,6 +60,8 @@ export const HouseholdAdminModal: React.FC<HouseholdAdminModalProps> = ({ open, 
     setPinResetTargetId(null);
     setNewPinDraft('');
     setPinError(null);
+    setRewardsTargetId(null);
+    setRewardDrafts({});
 
     if (activeProfile && isActiveProfileAdmin) {
       setVerifiedAdminId(activeProfile.id);
@@ -124,6 +132,22 @@ export const HouseholdAdminModal: React.FC<HouseholdAdminModalProps> = ({ open, 
     setNewPinDraft('');
   };
 
+  const handleSaveRewards = async (target: UserProfile) => {
+    const cleaned: Record<string, string> = {};
+    for (const def of READING_BADGE_DEFINITIONS) {
+      const val = rewardDrafts[def.id]?.trim();
+      if (val) {
+        cleaned[def.id] = val;
+      }
+    }
+    await updateProfile(target.id, { badgeRewards: cleaned });
+    addToast({
+      title: `Saved rewards for ${target.name}`,
+      tone: 'success',
+    });
+    setRewardsTargetId(null);
+  };
+
   const unprotectedAdmin = adminProfiles.some((a) => !a.pinHash);
 
   return (
@@ -131,7 +155,7 @@ export const HouseholdAdminModal: React.FC<HouseholdAdminModalProps> = ({ open, 
       open={open}
       onClose={onClose}
       title="Parent & Household Admin"
-      subtitle="Manage household reader roles, reset forgotten PINs, and configure accounts."
+      subtitle="Manage household reader roles, reset forgotten PINs, configure badge rewards, and manage accounts."
       maxWidthClass="max-w-xl"
     >
       <div className="p-5 space-y-5">
@@ -251,6 +275,10 @@ export const HouseholdAdminModal: React.FC<HouseholdAdminModalProps> = ({ open, 
                   (b) => b.profileId === member.id && !b.deletedAt,
                 ).length;
                 const isResetOpen = pinResetTargetId === member.id;
+                const isRewardsOpen = rewardsTargetId === member.id;
+                const rewardCount = Object.values(member.badgeRewards || {}).filter((v) =>
+                  v?.trim(),
+                ).length;
 
                 return (
                   <div
@@ -299,11 +327,44 @@ export const HouseholdAdminModal: React.FC<HouseholdAdminModalProps> = ({ open, 
                             setPinResetTargetId(isResetOpen ? null : member.id);
                             setNewPinDraft('');
                             setPinError(null);
+                            setRewardsTargetId(null);
                           }}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 hover:border-amber-400 text-xs font-semibold text-stone-700 dark:text-stone-200 cursor-pointer"
                         >
                           <KeyRound className="w-3.5 h-3.5 text-amber-600" />
                           {member.pinHash ? 'Reset PIN' : 'Set PIN'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isRewardsOpen) {
+                              setRewardsTargetId(null);
+                            } else {
+                              setRewardsTargetId(member.id);
+                              setRewardDrafts({ ...(member.badgeRewards || {}) });
+                              setPinResetTargetId(null);
+                            }
+                          }}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-semibold cursor-pointer ${
+                            isRewardsOpen
+                              ? 'bg-rose-600 text-white border-rose-600'
+                              : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 hover:border-rose-400 text-stone-700 dark:text-stone-200'
+                          }`}
+                        >
+                          <Gift className={`w-3.5 h-3.5 ${isRewardsOpen ? 'text-white' : 'text-rose-500'}`} />
+                          <span>Rewards</span>
+                          {rewardCount > 0 && (
+                            <span
+                              className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                                isRewardsOpen
+                                  ? 'bg-white/25 text-white'
+                                  : 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+                              }`}
+                            >
+                              {rewardCount}
+                            </span>
+                          )}
                         </button>
 
                         <button
@@ -389,6 +450,55 @@ export const HouseholdAdminModal: React.FC<HouseholdAdminModalProps> = ({ open, 
                             {pinError}
                           </p>
                         )}
+                      </div>
+                    )}
+
+                    {isRewardsOpen && (
+                      <div className="pt-3 border-t border-stone-200/70 dark:border-stone-800 space-y-2.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-300 flex items-center gap-1.5">
+                          <Gift className="w-3.5 h-3.5" />
+                          Milestone Reward Notes for {member.name}
+                        </p>
+                        <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-1">
+                          {READING_BADGE_DEFINITIONS.map((def) => (
+                            <div
+                              key={def.id}
+                              className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2.5"
+                            >
+                              <span className="text-xs font-medium text-stone-700 dark:text-stone-200 sm:w-44 shrink-0 truncate">
+                                {def.emoji} {def.title}
+                              </span>
+                              <input
+                                type="text"
+                                value={rewardDrafts[def.id] || ''}
+                                onChange={(e) =>
+                                  setRewardDrafts((prev) => ({
+                                    ...prev,
+                                    [def.id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Optional reward (e.g. Pick family movie night)…"
+                                className="flex-1 px-2.5 py-1.5 rounded-xl bg-white dark:bg-stone-950 border border-stone-200 dark:border-stone-700 text-xs text-stone-900 dark:text-stone-100 outline-none focus:ring-2 focus:ring-rose-500"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setRewardsTargetId(null)}
+                            className="px-3 py-1.5 rounded-xl text-xs font-medium text-stone-500 hover:bg-stone-200/70 dark:hover:bg-stone-800 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleSaveRewards(member)}
+                            className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer"
+                          >
+                            Save Rewards
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
