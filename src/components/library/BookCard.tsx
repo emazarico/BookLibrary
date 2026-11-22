@@ -1,9 +1,21 @@
 import React from 'react';
-import { Calendar, Edit3, Headphones, Plus, Tablet } from 'lucide-react';
+import {
+  AlertCircle,
+  Calendar,
+  Edit3,
+  Globe,
+  Headphones,
+  MessageSquareQuote,
+  Plus,
+  Star,
+  Tablet,
+  UserCheck,
+} from 'lucide-react';
+import { useResolvedCover } from '../../services/coverStore';
 import type { Book } from '../../types/library';
-import { getBookCoverStyle, sanitizeCoverUrl } from '../../utils/cover';
+import { getBookCoverStyle } from '../../utils/cover';
 import { formatMinutesHuman, getBookProgressInfo } from '../../utils/progress';
-import { BOOK_FORMAT_META, STATUS_META } from '../../utils/themes';
+import { BOOK_FORMAT_META, OWNERSHIP_META, STATUS_META } from '../../utils/themes';
 import { BookCover } from '../common/BookCover';
 import { StarRating } from '../common/StarRating';
 
@@ -15,6 +27,14 @@ interface BookCardProps {
   onTagClick?: (tag: string) => void;
 }
 
+function todayIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export const BookCard: React.FC<BookCardProps> = ({
   book,
   onOpenDetail,
@@ -22,11 +42,22 @@ export const BookCard: React.FC<BookCardProps> = ({
   onLogPages,
   onTagClick,
 }) => {
-  const cleanCover = sanitizeCoverUrl(book.coverUrl);
+  const cleanCover = useResolvedCover(book.coverUrl);
   const cloth = getBookCoverStyle(book.title, book.author);
   const statusMeta = STATUS_META[book.status];
   const format = book.format || 'physical';
   const progress = getBookProgressInfo(book);
+  const ownershipMeta = book.ownership ? OWNERSHIP_META[book.ownership] : null;
+  const nonEnglishLang =
+    book.language && book.language.trim() && book.language.toLowerCase() !== 'english'
+      ? book.language
+      : null;
+  const isOverdue = Boolean(
+    book.dueDate &&
+      (book.ownership === 'library' || book.ownership === 'borrowed') &&
+      book.dueDate < todayIso(),
+  );
+  const hasWantSnippet = Boolean(book.recommendedBy || book.wantToReadNote);
 
   return (
     <article
@@ -65,11 +96,11 @@ export const BookCard: React.FC<BookCardProps> = ({
         </div>
 
         <div className="min-w-0 flex-1 flex flex-col">
-          {/* Status & Format Pills + Quick Edit */}
-          <div className="flex items-center justify-between gap-2 mb-1.5">
-            <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+          {/* Status, Format, Language, Ownership Pills + Quick Edit */}
+          <div className="flex items-start justify-between gap-2 mb-1.5">
+            <div className="flex flex-wrap items-center gap-1 min-w-0">
               <span
-                className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusMeta.badgeClass}`}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusMeta.badgeClass}`}
               >
                 <span className={`w-1.5 h-1.5 rounded-full ${statusMeta.dotClass}`} />
                 {statusMeta.shortLabel}
@@ -77,16 +108,56 @@ export const BookCard: React.FC<BookCardProps> = ({
 
               {format === 'audiobook' && (
                 <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${BOOK_FORMAT_META.audiobook.badgeClass}`}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${BOOK_FORMAT_META.audiobook.badgeClass}`}
                 >
-                  <Headphones className="w-3 h-3" /> Audiobook
+                  <Headphones className="w-2.5 h-2.5" /> Audiobook
                 </span>
               )}
               {format === 'ebook' && (
                 <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${BOOK_FORMAT_META.ebook.badgeClass}`}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${BOOK_FORMAT_META.ebook.badgeClass}`}
                 >
-                  <Tablet className="w-3 h-3" /> E-book
+                  <Tablet className="w-2.5 h-2.5" /> E-book
+                </span>
+              )}
+
+              {nonEnglishLang && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20">
+                  <Globe className="w-2.5 h-2.5" />
+                  {nonEnglishLang}
+                </span>
+              )}
+
+              {ownershipMeta && (
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${ownershipMeta.badgeClass}`}
+                >
+                  {ownershipMeta.shortLabel}
+                </span>
+              )}
+
+              {book.dueDate && (
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                    isOverdue
+                      ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30'
+                      : 'bg-sky-500/12 text-sky-700 dark:text-sky-300 border-sky-500/20'
+                  }`}
+                >
+                  {isOverdue && <AlertCircle className="w-2.5 h-2.5" />}
+                  {isOverdue ? 'Overdue' : 'Due'} {book.dueDate}
+                </span>
+              )}
+
+              {book.lentTo && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/25">
+                  <UserCheck className="w-2.5 h-2.5" /> Lent: {book.lentTo}
+                </span>
+              )}
+
+              {book.review && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                  <Star className="w-2.5 h-2.5 fill-emerald-500 text-emerald-500" /> Reviewed
                 </span>
               )}
             </div>
@@ -103,6 +174,14 @@ export const BookCard: React.FC<BookCardProps> = ({
               <Edit3 className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          {/* Series Kicker */}
+          {book.series && (
+            <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 truncate mb-0.5">
+              {book.series}
+              {book.seriesIndex ? ` #${book.seriesIndex}` : ''}
+            </p>
+          )}
 
           {/* Title & Author */}
           <h3
@@ -136,10 +215,26 @@ export const BookCard: React.FC<BookCardProps> = ({
             )}
           </div>
 
-          {/* Notes Excerpt */}
-          {book.notes && (
+          {/* Want-to-Read Recommendation / Comment Snippet */}
+          {hasWantSnippet && (
+            <div className="mt-2 flex items-start gap-1.5 text-[11px] text-sky-800 dark:text-sky-300 bg-sky-500/8 border border-sky-500/15 rounded-xl px-2.5 py-1.5">
+              <MessageSquareQuote className="w-3 h-3 shrink-0 mt-0.5 text-sky-600 dark:text-sky-400" />
+              <p className="line-clamp-2 leading-snug">
+                {book.recommendedBy && (
+                  <span className="font-semibold">
+                    Rec: {book.recommendedBy}
+                    {book.wantToReadNote ? ' — ' : ''}
+                  </span>
+                )}
+                {book.wantToReadNote}
+              </p>
+            </div>
+          )}
+
+          {/* Review or Notes Excerpt */}
+          {!hasWantSnippet && (book.review || book.notes) && (
             <p className="text-xs text-stone-600 dark:text-stone-300/90 italic line-clamp-2 mt-2.5 leading-relaxed">
-              &ldquo;{book.notes}&rdquo;
+              &ldquo;{book.review || book.notes}&rdquo;
             </p>
           )}
 

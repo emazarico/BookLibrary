@@ -10,6 +10,7 @@ import {
 } from '../../utils/progress';
 import { BookCover } from '../common/BookCover';
 import { Modal } from '../common/Modal';
+import { StarRating } from '../common/StarRating';
 
 interface LogSessionModalProps {
   open: boolean;
@@ -52,6 +53,8 @@ export const LogSessionModal: React.FC<LogSessionModalProps> = ({
   const [date, setDate] = useState(todayIso);
   const [note, setNote] = useState('');
   const [markFinished, setMarkFinished] = useState(false);
+  const [finalRating, setFinalRating] = useState(0);
+  const [finalReview, setFinalReview] = useState('');
 
   const selectedBook = useMemo(
     () => sortedBooks.find((b) => b.id === selectedBookId) || sortedBooks[0] || null,
@@ -70,6 +73,8 @@ export const LogSessionModal: React.FC<LogSessionModalProps> = ({
     setDate(todayIso());
     setNote('');
     setMarkFinished(false);
+    setFinalRating(defaultBook?.rating || 0);
+    setFinalReview(defaultBook?.review || '');
   }, [open, initialBookId, sortedBooks]);
 
   useEffect(() => {
@@ -92,6 +97,8 @@ export const LogSessionModal: React.FC<LogSessionModalProps> = ({
     const totMin = selectedBook.totalMinutes ?? 0;
     const suggestedMin = totMin > 0 ? Math.min(totMin, curMin + 30) : curMin + 30;
     setDurationReachedText(formatMinutesHHMM(suggestedMin));
+    setFinalRating(selectedBook.rating || 0);
+    setFinalReview(selectedBook.review || '');
   }, [selectedBook, open]);
 
   const computedPagesDelta = useMemo(() => {
@@ -184,6 +191,8 @@ export const LogSessionModal: React.FC<LogSessionModalProps> = ({
       minuteReached: unit === 'duration' ? projectedMinute : undefined,
       note,
       markFinished,
+      finalRating: markFinished && finalRating > 0 ? finalRating : undefined,
+      finalReview: markFinished && finalReview.trim() ? finalReview.trim() : undefined,
     });
     onClose();
   };
@@ -459,17 +468,42 @@ export const LogSessionModal: React.FC<LogSessionModalProps> = ({
           </div>
 
           {selectedBook && selectedBook.status !== 'finished' && (
-            <label className="flex items-center gap-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={markFinished}
-                onChange={(e) => setMarkFinished(e.target.checked)}
-                className="accent-emerald-600 w-4 h-4"
-              />
-              <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                <BookOpenCheck className="w-4 h-4" /> Mark book as Finished today
-              </span>
-            </label>
+            <div className="space-y-3">
+              <label className="flex items-center gap-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={markFinished}
+                  onChange={(e) => setMarkFinished(e.target.checked)}
+                  className="accent-emerald-600 w-4 h-4"
+                />
+                <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
+                  <BookOpenCheck className="w-4 h-4" /> Mark book as Finished today
+                </span>
+              </label>
+
+              {markFinished && (
+                <div className="p-3.5 rounded-xl bg-emerald-500/6 border border-emerald-500/20 space-y-2.5 animate-fade-slide">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                      Rating & Final Review (Optional)
+                    </span>
+                    <StarRating
+                      value={finalRating}
+                      onChange={setFinalRating}
+                      size="sm"
+                      showNumeric
+                    />
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={finalReview}
+                    onChange={(e) => setFinalReview(e.target.value)}
+                    placeholder="Write your final thoughts for the Reviews tab…"
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-xs text-stone-900 dark:text-stone-100 outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              )}
+            </div>
           )}
 
           <div className="flex items-center justify-end gap-2 pt-2">

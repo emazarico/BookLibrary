@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { getBookCoverStyle, sanitizeCoverUrl } from '../../utils/cover';
+import { useResolvedCover } from '../../services/coverStore';
+import { getBookCoverStyle } from '../../utils/cover';
 
 interface BookCoverProps {
   title: string;
@@ -26,7 +27,7 @@ export const BookCover: React.FC<BookCoverProps> = ({
   interactive = true,
   className = '',
 }) => {
-  const cleanUrl = sanitizeCoverUrl(coverUrl);
+  const cleanUrl = useResolvedCover(coverUrl);
   const [imgFailed, setImgFailed] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
 
