@@ -13,6 +13,11 @@ import {
   requestDriveAccessToken,
   syncWithDrive,
 } from '../services/googleDriveSync';
+import {
+  isIndexedDbAvailable,
+  loadDatabaseFromIdb,
+  saveDatabaseToIdb,
+} from '../services/idbStorage';
 import { applyImport, type ImportPreview } from '../services/importExport';
 import {
   clearLocalDatabase,
@@ -22,8 +27,8 @@ import {
   loadLocalDatabase,
   loadSavedActiveProfileId,
   persistActiveProfileSession,
+  saveDatabaseWithFallback,
   saveDriveConfig,
-  saveLocalDatabase,
   saveTheme,
 } from '../services/storage';
 import type {
@@ -37,6 +42,7 @@ import type {
   ProgressUnit,
   ReadingLog,
   ReadingStatus,
+  ReadSessionSpan,
   Shelf,
   SyncStatus,
   ThemeMode,
@@ -105,6 +111,7 @@ export interface BookInput {
   rating: number;
   dateStarted?: string;
   dateFinished?: string;
+  readHistory?: ReadSessionSpan[];
   recommendedBy?: string;
   wantToReadNote?: string;
   review?: string;
@@ -134,6 +141,7 @@ export interface LogSessionInput {
 
 interface LibraryContextValue {
   db: BookLibraryDatabase;
+  storageEngine: 'indexeddb' | 'localstorage';
   activeProfiles: UserProfile[];
   adminProfiles: UserProfile[];
   activeProfile: UserProfile | null;
@@ -184,10 +192,13 @@ interface LibraryContextValue {
   ) => void;
   deleteShelf: (shelfId: string) => void;
 
-  // Books & Household Recommendations
+  // Books, Re-Reads, & Household Recommendations
   addBook: (input: BookInput) => Book | null;
   updateBook: (bookId: string, updates: Partial<BookInput>) => void;
   deleteBook: (bookId: string) => void;
+  startReread: (bookId: string, startDate?: string) => void;
+  addReadHistorySpan: (bookId: string, span: Omit<ReadSessionSpan, 'id'>) => void;
+  deleteReadHistorySpan: (bookId: string, spanId: string) => void;
   recommendBookToProfile: (
     bookId: string,
     targetProfileId: string,
@@ -226,6 +237,9 @@ function sanitizeSeriesIndex(value?: number): number | undefined {
 
 export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [db, setDb] = useState<BookLibraryDatabase>(() => loadLocalDatabase());
+  const [storageEngine, setStorageEngine] = useState<'indexeddb' | 'localstorage'>(() =>
+    isIndexedDbAvailable() ? 'indexeddb' : 'localstorage',
+  );
   const [activeProfileId, setActiveProfileId] = useState<string | null>(() => {
     const initialDb = loadLocalDatabase();
     const savedId = loadSavedActiveProfileId();
@@ -247,6 +261,8 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const dbRef = useRef(db);
   dbRef.current = db;
+  const activeProfileIdRef = useRef(activeProfileId);
+  activeProfileIdRef.current = activeProfileId;
   const driveConfigRef = useRef(driveConfig);
   driveConfigRef.current = driveConfig;
   const accessTokenRef = useRef(accessToken);
@@ -267,6 +283,44 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     },
     [dismissToast],
   );
+
+  // Hydrate / migrate database from IndexedDB on mount
+  useEffect(() => {
+    let cancelled = false;
+    if (!isIndexedDbAvailable()) {
+      setStorageEngine('localstorage');
+      return;
+    }
+    setStorageEngine('indexeddb');
+
+    void (async () => {
+      const idbDb = await loadDatabaseFromIdb();
+      if (cancelled) return;
+
+      const current = dbRef.current;
+      if (idbDb) {
+        const currentEmpty = current.profiles.length === 0 && current.books.length === 0;
+        const idbNewer = Date.parse(idbDb.updatedAt) > Date.parse(current.updatedAt);
+        if (currentEmpty || idbNewer) {
+          setDb(idbDb);
+          const currentActiveId = activeProfileIdRef.current;
+          const savedId = loadSavedActiveProfileId();
+          const candidateId = currentActiveId || savedId;
+          if (candidateId && idbDb.profiles.some((p) => p.id === candidateId && !p.deletedAt)) {
+            setActiveProfileId(candidateId);
+          } else if (currentActiveId) {
+            setActiveProfileId(null);
+          }
+        }
+      } else if (current.profiles.length > 0 || current.books.length > 0) {
+        await saveDatabaseToIdb(current);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Sync HTML .dark class + localStorage
   useEffect(() => {
@@ -309,6 +363,22 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, []);
 
+  const persistSnapshot = useCallback(
+    (stamped: BookLibraryDatabase) => {
+      void saveDatabaseWithFallback(stamped).then((res) => {
+        setStorageEngine(res.engine);
+        if (!res.ok) {
+          addToast({
+            title: 'Local save failed',
+            description: res.error,
+            tone: 'error',
+          });
+        }
+      });
+    },
+    [addToast],
+  );
+
   const runSyncWithToken = useCallback(
     async (token: string, silent = false) => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -320,7 +390,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         const result = await syncWithDrive(dbRef.current, driveConfigRef.current, token);
         setDb(result.mergedDb);
-        saveLocalDatabase(result.mergedDb);
+        persistSnapshot(result.mergedDb);
         const updatedConfig: DriveConfig = {
           ...driveConfigRef.current,
           fileId: result.fileId,
@@ -355,7 +425,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
     },
-    [addToast],
+    [addToast, persistSnapshot],
   );
 
   const scheduleAutoSync = useCallback(() => {
@@ -379,20 +449,13 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
           schemaVersion: 4,
           updatedAt: new Date().toISOString(),
         };
-        const saved = saveLocalDatabase(stamped);
-        if (!saved.ok) {
-          addToast({
-            title: 'Local save failed',
-            description: saved.error,
-            tone: 'error',
-          });
-        }
+        persistSnapshot(stamped);
         return stamped;
       });
       setHasUnsyncedChanges(true);
       scheduleAutoSync();
     },
-    [addToast, scheduleAutoSync],
+    [persistSnapshot, scheduleAutoSync],
   );
 
   const activeProfiles = useMemo(
@@ -795,7 +858,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [addToast, commitDatabase],
   );
 
-  // --- Books ---
+  // --- Books & Re-Reads ---
   const addBook = useCallback(
     (input: BookInput): Book | null => {
       if (!activeProfileId) return null;
@@ -828,6 +891,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         rating: Math.min(5, Math.max(0, Math.round((input.rating || 0) * 2) / 2)),
         dateStarted: input.dateStarted || undefined,
         dateFinished: input.dateFinished || undefined,
+        readHistory: input.readHistory,
         recommendedBy: input.recommendedBy?.trim() || undefined,
         wantToReadNote: input.wantToReadNote?.trim() || undefined,
         review: input.review?.trim() || undefined,
@@ -874,6 +938,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
             dueDate: 'dueDate' in updates ? updates.dueDate || undefined : b.dueDate,
             lentTo: 'lentTo' in updates ? updates.lentTo?.trim() || undefined : b.lentTo,
             lentDate: 'lentDate' in updates ? updates.lentDate || undefined : b.lentDate,
+            readHistory: 'readHistory' in updates ? updates.readHistory : b.readHistory,
             recommendedBy:
               'recommendedBy' in updates
                 ? updates.recommendedBy?.trim() || undefined
@@ -920,6 +985,112 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }));
     },
     [commitDatabase],
+  );
+
+  const startReread = useCallback(
+    (bookId: string, startDate?: string) => {
+      const now = new Date().toISOString();
+      const today = now.split('T')[0];
+      const targetBook = dbRef.current.books.find((b) => b.id === bookId && !b.deletedAt);
+      if (!targetBook) return;
+
+      const history = Array.isArray(targetBook.readHistory)
+        ? [...targetBook.readHistory]
+        : [];
+      const alreadyRecorded = history.some(
+        (span) =>
+          span.finishedAt === targetBook.dateFinished &&
+          span.startedAt === targetBook.dateStarted,
+      );
+
+      if (
+        !alreadyRecorded &&
+        (targetBook.status === 'finished' || targetBook.dateFinished || targetBook.dateStarted)
+      ) {
+        history.push({
+          id: generateId('read'),
+          startedAt: targetBook.dateStarted,
+          finishedAt:
+            targetBook.dateFinished || (targetBook.status === 'finished' ? today : undefined),
+          rating: targetBook.rating > 0 ? targetBook.rating : undefined,
+          notes: targetBook.review?.trim() || undefined,
+          format: targetBook.format,
+        });
+      }
+
+      const nextReadNumber = history.length + 1;
+      commitDatabase((prev) => ({
+        ...prev,
+        books: prev.books.map((b) =>
+          b.id === bookId
+            ? {
+                ...b,
+                status: 'reading',
+                dateStarted: startDate || today,
+                dateFinished: undefined,
+                currentPage: 0,
+                currentChapter:
+                  b.totalChapters !== undefined || b.progressUnit === 'chapters' ? 0 : undefined,
+                currentMinutes:
+                  b.totalMinutes !== undefined || b.progressUnit === 'duration' ? 0 : undefined,
+                readHistory: history,
+                updatedAt: now,
+              }
+            : b,
+        ),
+      }));
+
+      addToast({
+        title: `Started re-read #${nextReadNumber} of "${targetBook.title}"`,
+        tone: 'success',
+      });
+    },
+    [addToast, commitDatabase],
+  );
+
+  const addReadHistorySpan = useCallback(
+    (bookId: string, span: Omit<ReadSessionSpan, 'id'>) => {
+      const now = new Date().toISOString();
+      const entry: ReadSessionSpan = {
+        ...span,
+        id: generateId('read'),
+        notes: span.notes?.trim() || undefined,
+      };
+      commitDatabase((prev) => ({
+        ...prev,
+        books: prev.books.map((b) =>
+          b.id === bookId
+            ? {
+                ...b,
+                readHistory: [...(b.readHistory || []), entry],
+                updatedAt: now,
+              }
+            : b,
+        ),
+      }));
+      addToast({ title: 'Added past read entry', tone: 'success' });
+    },
+    [addToast, commitDatabase],
+  );
+
+  const deleteReadHistorySpan = useCallback(
+    (bookId: string, spanId: string) => {
+      const now = new Date().toISOString();
+      commitDatabase((prev) => ({
+        ...prev,
+        books: prev.books.map((b) => {
+          if (b.id !== bookId) return b;
+          const remaining = (b.readHistory || []).filter((s) => s.id !== spanId);
+          return {
+            ...b,
+            readHistory: remaining.length > 0 ? remaining : undefined,
+            updatedAt: now,
+          };
+        }),
+      }));
+      addToast({ title: 'Removed past read entry', tone: 'info' });
+    },
+    [addToast, commitDatabase],
   );
 
   const deleteBook = useCallback(
@@ -1088,6 +1259,8 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       }
 
+      const activeCycle = (book.readHistory?.length ?? 0) + 1;
+
       const log: ReadingLog = {
         id: generateId('log'),
         profileId: activeProfileId,
@@ -1100,6 +1273,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         chapterReached: nextChapter,
         minutesListened,
         minuteReached: nextMinute,
+        readCycle: activeCycle,
         note: input.note?.trim() || undefined,
         createdAt: now,
         updatedAt: now,
@@ -1238,7 +1412,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const loadSampleHousehold = useCallback(async () => {
     const demo = await createDemoHousehold();
-    saveLocalDatabase(demo);
+    await saveDatabaseWithFallback(demo);
     setDb(demo);
     setActiveProfileId(null);
     setPendingPinProfileId(null);
@@ -1340,6 +1514,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const value: LibraryContextValue = {
     db,
+    storageEngine,
     activeProfiles,
     adminProfiles,
     activeProfile,
@@ -1376,6 +1551,9 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     addBook,
     updateBook,
     deleteBook,
+    startReread,
+    addReadHistorySpan,
+    deleteReadHistorySpan,
     recommendBookToProfile,
     logReadingSession,
     updateReadingLog,

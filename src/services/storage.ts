@@ -1,5 +1,10 @@
 import type { BookLibraryDatabase, DriveConfig, ThemeMode } from '../types/library';
 import { generateId } from '../utils/crypto';
+import {
+  clearDatabaseFromIdb,
+  isIndexedDbAvailable,
+  saveDatabaseToIdb,
+} from './idbStorage';
 
 export const STORAGE_KEYS = {
   DB: 'booklibrary_db',
@@ -16,6 +21,7 @@ export const STORAGE_KEYS = {
 } as const;
 
 export const DEFAULT_DRIVE_FILE_NAME = 'booklibrary-db.json';
+const LOCAL_STORAGE_MIRROR_LIMIT = 4_000_000;
 
 function readWithLegacyFallback(primaryKey: string, legacyKey: string): string | null {
   const current = localStorage.getItem(primaryKey);
@@ -67,6 +73,55 @@ export function saveLocalDatabase(db: BookLibraryDatabase): { ok: boolean; error
   }
 }
 
+export interface SaveFallbackResult {
+  ok: boolean;
+  engine: 'indexeddb' | 'localstorage';
+  localStorageOverflow?: boolean;
+  error?: string;
+}
+
+/**
+ * Persists database primarily in IndexedDB (high storage ceiling for large households),
+ * while maintaining a synchronous localStorage mirror when size is safely below 4 MB.
+ */
+export async function saveDatabaseWithFallback(
+  db: BookLibraryDatabase,
+): Promise<SaveFallbackResult> {
+  if (isIndexedDbAvailable()) {
+    const idbRes = await saveDatabaseToIdb(db);
+    if (idbRes.ok) {
+      const serialized = JSON.stringify(db);
+      if (serialized.length < LOCAL_STORAGE_MIRROR_LIMIT) {
+        try {
+          localStorage.setItem(STORAGE_KEYS.DB, serialized);
+          return { ok: true, engine: 'indexeddb' };
+        } catch {
+          try {
+            localStorage.removeItem(STORAGE_KEYS.DB);
+          } catch {
+            // ignore
+          }
+          return { ok: true, engine: 'indexeddb', localStorageOverflow: true };
+        }
+      } else {
+        try {
+          localStorage.removeItem(STORAGE_KEYS.DB);
+        } catch {
+          // ignore
+        }
+        return { ok: true, engine: 'indexeddb', localStorageOverflow: true };
+      }
+    }
+  }
+
+  const localRes = saveLocalDatabase(db);
+  return {
+    ok: localRes.ok,
+    engine: 'localstorage',
+    error: localRes.error,
+  };
+}
+
 export function clearLocalDatabase(): void {
   try {
     localStorage.removeItem(STORAGE_KEYS.DB);
@@ -78,6 +133,7 @@ export function clearLocalDatabase(): void {
   } catch {
     // ignore
   }
+  void clearDatabaseFromIdb();
 }
 
 export function detectLegacyV3Data(): string | null {

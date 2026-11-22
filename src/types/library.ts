@@ -20,6 +20,15 @@ export type AvatarTheme =
   | 'coral'
   | 'slate';
 
+export interface ReadSessionSpan {
+  id: string;
+  startedAt?: string;
+  finishedAt?: string;
+  rating?: number;
+  notes?: string;
+  format?: BookFormat;
+}
+
 export interface BookEditionOption {
   key: string;
   title: string;
@@ -89,6 +98,7 @@ export interface Book {
   rating: number;
   dateStarted?: string;
   dateFinished?: string;
+  readHistory?: ReadSessionSpan[];
   recommendedBy?: string;
   wantToReadNote?: string;
   review?: string;
@@ -116,6 +126,7 @@ export interface ReadingLog {
   chapterReached?: number;
   minutesListened?: number;
   minuteReached?: number;
+  readCycle?: number;
   note?: string;
   createdAt: string;
   updatedAt: string;

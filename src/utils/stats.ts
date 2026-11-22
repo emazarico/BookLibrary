@@ -34,6 +34,14 @@ export interface TimelineMonthGroup {
   totalPages: number;
 }
 
+export interface FinishedOccurrence {
+  dateFinished?: string;
+  startedAt?: string;
+  rating?: number;
+  cycleIndex: number;
+  isHistorical: boolean;
+}
+
 const MONTH_SHORT = [
   'Jan',
   'Feb',
@@ -74,6 +82,45 @@ export function parseYearMonth(dateStr?: string): { year: number; month: number 
   return { year, month };
 }
 
+/**
+ * Returns every completed read for a book (active finished state + historical re-read spans),
+ * deduplicating any historical span whose finishedAt matches the currently active dateFinished.
+ */
+export function getBookFinishedOccurrences(book: Book): FinishedOccurrence[] {
+  const history = Array.isArray(book.readHistory) ? book.readHistory : [];
+  const occurrences: FinishedOccurrence[] = [];
+
+  history.forEach((span, idx) => {
+    if (!span.finishedAt) return;
+    if (
+      book.status === 'finished' &&
+      book.dateFinished &&
+      span.finishedAt === book.dateFinished
+    ) {
+      return;
+    }
+    occurrences.push({
+      dateFinished: span.finishedAt,
+      startedAt: span.startedAt,
+      rating: span.rating && span.rating > 0 ? span.rating : undefined,
+      cycleIndex: idx + 1,
+      isHistorical: true,
+    });
+  });
+
+  if (book.status === 'finished') {
+    occurrences.push({
+      dateFinished: book.dateFinished,
+      startedAt: book.dateStarted,
+      rating: book.rating > 0 ? book.rating : undefined,
+      cycleIndex: history.length + 1,
+      isHistorical: false,
+    });
+  }
+
+  return occurrences;
+}
+
 export function getAvailableYears(books: Book[], logs: ReadingLog[]): number[] {
   const years = new Set<number>([new Date().getFullYear()]);
   for (const b of books) {
@@ -82,6 +129,12 @@ export function getAvailableYears(books: Book[], logs: ReadingLog[]): number[] {
     if (fin) years.add(fin.year);
     const start = parseYearMonth(b.dateStarted);
     if (start) years.add(start.year);
+    for (const span of b.readHistory || []) {
+      const hFin = parseYearMonth(span.finishedAt);
+      if (hFin) years.add(hFin.year);
+      const hStart = parseYearMonth(span.startedAt);
+      if (hStart) years.add(hStart.year);
+    }
   }
   for (const l of logs) {
     if (l.deletedAt) continue;
@@ -91,10 +144,52 @@ export function getAvailableYears(books: Book[], logs: ReadingLog[]): number[] {
   return Array.from(years).sort((a, b) => b - a);
 }
 
+function buildLoggedPagesByBookCycle(activeLogs: ReadingLog[]): {
+  totalByBook: Map<string, number>;
+  byBookAndCycle: Map<string, number>;
+} {
+  const totalByBook = new Map<string, number>();
+  const byBookAndCycle = new Map<string, number>();
+
+  for (const log of activeLogs) {
+    const pages = Math.max(0, log.pagesRead || 0);
+    totalByBook.set(log.bookId, (totalByBook.get(log.bookId) ?? 0) + pages);
+    if (log.readCycle && log.readCycle > 0) {
+      const key = `${log.bookId}::${log.readCycle}`;
+      byBookAndCycle.set(key, (byBookAndCycle.get(key) ?? 0) + pages);
+    }
+  }
+
+  return { totalByBook, byBookAndCycle };
+}
+
+function getLoggedPagesForOccurrence(
+  book: Book,
+  occ: FinishedOccurrence,
+  totals: { totalByBook: Map<string, number>; byBookAndCycle: Map<string, number> },
+): number {
+  const cycleKey = `${book.id}::${occ.cycleIndex}`;
+  if (totals.byBookAndCycle.has(cycleKey)) {
+    return totals.byBookAndCycle.get(cycleKey) ?? 0;
+  }
+  if (occ.isHistorical) {
+    return 0;
+  }
+  // Primary read with legacy logs lacking explicit readCycle
+  const totalAll = totals.totalByBook.get(book.id) ?? 0;
+  const historyLen = book.readHistory?.length ?? 0;
+  if (historyLen === 0) return totalAll;
+  let explicitOtherCycles = 0;
+  for (let c = 1; c <= historyLen; c++) {
+    explicitOtherCycles += totals.byBookAndCycle.get(`${book.id}::${c}`) ?? 0;
+  }
+  return Math.max(0, totalAll - explicitOtherCycles);
+}
+
 /**
  * Computes 12 monthly buckets for a given calendar year.
  * Guards against double-counting: each book's active ReadingLogs are summed across all dates,
- * and finished-book page backfill only adds `max(0, pageCount - totalLoggedForBook)` to `dateFinished`'s month.
+ * and finished-book page backfill only adds `max(0, pageCount - totalLoggedForCycle)` to `dateFinished`'s month.
  */
 export function computeMonthlyStats(
   books: Book[],
@@ -115,12 +210,10 @@ export function computeMonthlyStats(
 
   const activeLogs = logs.filter((l) => !l.deletedAt);
   const activeBooks = books.filter((b) => !b.deletedAt);
+  const logTotals = buildLoggedPagesByBookCycle(activeLogs);
 
-  const loggedByBook = new Map<string, number>();
   for (const log of activeLogs) {
     const pages = Math.max(0, log.pagesRead || 0);
-    loggedByBook.set(log.bookId, (loggedByBook.get(log.bookId) ?? 0) + pages);
-
     const ym = parseYearMonth(log.date);
     if (ym && ym.year === year) {
       const bucket = buckets[ym.month];
@@ -131,19 +224,20 @@ export function computeMonthlyStats(
   }
 
   for (const book of activeBooks) {
-    if (book.status !== 'finished') continue;
-    const fin = parseYearMonth(book.dateFinished);
-    if (!fin || fin.year !== year) continue;
+    for (const occ of getBookFinishedOccurrences(book)) {
+      const fin = parseYearMonth(occ.dateFinished);
+      if (!fin || fin.year !== year) continue;
 
-    const bucket = buckets[fin.month];
-    bucket.booksFinished += 1;
+      const bucket = buckets[fin.month];
+      bucket.booksFinished += 1;
 
-    if (includeBackfill && book.pageCount > 0) {
-      const loggedTotal = loggedByBook.get(book.id) ?? 0;
-      const remaining = Math.max(0, book.pageCount - loggedTotal);
-      if (remaining > 0) {
-        bucket.backfillPages += remaining;
-        bucket.pagesRead += remaining;
+      if (includeBackfill && book.pageCount > 0) {
+        const loggedForCycle = getLoggedPagesForOccurrence(book, occ, logTotals);
+        const remaining = Math.max(0, book.pageCount - loggedForCycle);
+        if (remaining > 0) {
+          bucket.backfillPages += remaining;
+          bucket.pagesRead += remaining;
+        }
       }
     }
   }
@@ -160,11 +254,22 @@ function toIsoDate(d: Date): string {
 
 export function computeDailyStreak(logs: ReadingLog[], referenceDate: Date = new Date()): number {
   const activeDates = new Set(
-    logs.filter((l) => !l.deletedAt && l.pagesRead > 0 && l.date).map((l) => l.date.slice(0, 10)),
+    logs
+      .filter(
+        (l) =>
+          !l.deletedAt &&
+          l.date &&
+          ((l.pagesRead || 0) > 0 || (l.chaptersRead ?? 0) > 0 || (l.minutesListened ?? 0) > 0),
+      )
+      .map((l) => l.date.slice(0, 10)),
   );
   if (activeDates.size === 0) return 0;
 
-  const cursor = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), referenceDate.getDate());
+  const cursor = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate(),
+  );
   const todayIso = toIsoDate(cursor);
   if (!activeDates.has(todayIso)) {
     cursor.setDate(cursor.getDate() - 1);
@@ -190,18 +295,18 @@ export function computeReadingSummary(
 ): ReadingSummary {
   const activeBooks = books.filter((b) => !b.deletedAt);
   const activeLogs = logs.filter((l) => !l.deletedAt);
+  const logTotals = buildLoggedPagesByBookCycle(activeLogs);
 
-  const loggedByBook = new Map<string, number>();
-  for (const log of activeLogs) {
-    loggedByBook.set(log.bookId, (loggedByBook.get(log.bookId) ?? 0) + Math.max(0, log.pagesRead));
+  const occurrencesInScope: Array<{ book: Book; occ: FinishedOccurrence }> = [];
+  for (const book of activeBooks) {
+    for (const occ of getBookFinishedOccurrences(book)) {
+      if (yearFilter !== 'all') {
+        const fin = parseYearMonth(occ.dateFinished);
+        if (!fin || fin.year !== yearFilter) continue;
+      }
+      occurrencesInScope.push({ book, occ });
+    }
   }
-
-  const finishedInScope = activeBooks.filter((b) => {
-    if (b.status !== 'finished') return false;
-    if (yearFilter === 'all') return true;
-    const fin = parseYearMonth(b.dateFinished);
-    return fin !== null && fin.year === yearFilter;
-  });
 
   const logsInScope = activeLogs.filter((l) => {
     if (yearFilter === 'all') return true;
@@ -213,43 +318,56 @@ export function computeReadingSummary(
 
   let backfillPages = 0;
   if (includeBackfill) {
-    for (const book of finishedInScope) {
+    for (const { book, occ } of occurrencesInScope) {
       if (book.pageCount > 0) {
-        const loggedTotal = loggedByBook.get(book.id) ?? 0;
-        backfillPages += Math.max(0, book.pageCount - loggedTotal);
+        const loggedForCycle = getLoggedPagesForOccurrence(book, occ, logTotals);
+        backfillPages += Math.max(0, book.pageCount - loggedForCycle);
       }
     }
   }
 
-  const ratedBooks = finishedInScope.filter((b) => b.rating > 0);
+  const ratedOccurrences = occurrencesInScope.filter(({ occ }) => (occ.rating ?? 0) > 0);
   const averageRating =
-    ratedBooks.length > 0
-      ? Number((ratedBooks.reduce((s, b) => s + b.rating, 0) / ratedBooks.length).toFixed(2))
+    ratedOccurrences.length > 0
+      ? Number(
+          (
+            ratedOccurrences.reduce((s, { occ }) => s + (occ.rating ?? 0), 0) /
+            ratedOccurrences.length
+          ).toFixed(2),
+        )
       : 0;
 
-  const pagedFinished = finishedInScope.filter((b) => b.pageCount > 0);
+  const pagedOccurrences = occurrencesInScope.filter(({ book }) => book.pageCount > 0);
   const averagePagesPerBook =
-    pagedFinished.length > 0
-      ? Math.round(pagedFinished.reduce((s, b) => s + b.pageCount, 0) / pagedFinished.length)
+    pagedOccurrences.length > 0
+      ? Math.round(
+          pagedOccurrences.reduce((s, { book }) => s + book.pageCount, 0) /
+            pagedOccurrences.length,
+        )
       : 0;
 
   // Current calendar month pages (respecting backfill setting)
   const currentYear = referenceDate.getFullYear();
   const currentMonth = referenceDate.getMonth();
-  const currentYearBuckets = computeMonthlyStats(activeBooks, activeLogs, currentYear, includeBackfill);
+  const currentYearBuckets = computeMonthlyStats(
+    activeBooks,
+    activeLogs,
+    currentYear,
+    includeBackfill,
+  );
   const currentMonthPages = currentYearBuckets[currentMonth]?.pagesRead ?? 0;
 
   const activeDaysSet = new Set(logsInScope.map((l) => l.date.slice(0, 10)).filter(Boolean));
 
   return {
-    booksFinished: finishedInScope.length,
+    booksFinished: occurrencesInScope.length,
     currentlyReadingCount: activeBooks.filter((b) => b.status === 'reading').length,
     totalPages: loggedPages + backfillPages,
     loggedPages,
     backfillPages,
     currentMonthPages,
     averageRating,
-    ratedBooksCount: ratedBooks.length,
+    ratedBooksCount: ratedOccurrences.length,
     averagePagesPerBook,
     activeReadingDays: activeDaysSet.size,
     currentDailyStreak: computeDailyStreak(activeLogs, referenceDate),
@@ -257,46 +375,51 @@ export function computeReadingSummary(
 }
 
 /**
- * Groups finished books chronologically by YYYY-MM descending with monthly book and page totals.
+ * Groups finished reads (including historical re-read spans) chronologically by YYYY-MM descending.
  */
 export function buildTimelineGroups(
   books: Book[],
   yearFilter: number | 'all',
 ): TimelineMonthGroup[] {
-  const activeFinished = books.filter((b) => {
-    if (b.deletedAt || b.status !== 'finished') return false;
-    if (yearFilter === 'all') return true;
-    const fin = parseYearMonth(b.dateFinished);
-    return fin !== null && fin.year === yearFilter;
-  });
-
   const groupMap = new Map<string, TimelineMonthGroup>();
 
-  for (const book of activeFinished) {
-    const fin = parseYearMonth(book.dateFinished);
-    const monthKey = fin
-      ? `${fin.year}-${String(fin.month + 1).padStart(2, '0')}`
-      : '0000-00';
+  for (const book of books) {
+    if (book.deletedAt) continue;
+    for (const occ of getBookFinishedOccurrences(book)) {
+      const fin = parseYearMonth(occ.dateFinished);
+      if (yearFilter !== 'all' && (!fin || fin.year !== yearFilter)) continue;
 
-    let group = groupMap.get(monthKey);
-    if (!group) {
-      group = {
-        monthKey,
-        label: fin ? `${MONTH_LONG[fin.month]} ${fin.year}` : 'Date Unspecified',
-        year: fin ? fin.year : 0,
-        month: fin ? fin.month : -1,
-        books: [],
-        totalPages: 0,
-      };
-      groupMap.set(monthKey, group);
+      const monthKey = fin
+        ? `${fin.year}-${String(fin.month + 1).padStart(2, '0')}`
+        : '0000-00';
+
+      let group = groupMap.get(monthKey);
+      if (!group) {
+        group = {
+          monthKey,
+          label: fin ? `${MONTH_LONG[fin.month]} ${fin.year}` : 'Date Unspecified',
+          year: fin ? fin.year : 0,
+          month: fin ? fin.month : -1,
+          books: [],
+          totalPages: 0,
+        };
+        groupMap.set(monthKey, group);
+      }
+
+      if (!group.books.some((existing) => existing.id === book.id)) {
+        group.books.push(book);
+      }
+      group.totalPages += Math.max(0, book.pageCount || 0);
     }
-    group.books.push(book);
-    group.totalPages += Math.max(0, book.pageCount || 0);
   }
 
-  const groups = Array.from(groupMap.values()).sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+  const groups = Array.from(groupMap.values()).sort((a, b) =>
+    b.monthKey.localeCompare(a.monthKey),
+  );
   for (const group of groups) {
-    group.books.sort((a, b) => (b.dateFinished || b.updatedAt).localeCompare(a.dateFinished || a.updatedAt));
+    group.books.sort((a, b) =>
+      (b.dateFinished || b.updatedAt).localeCompare(a.dateFinished || a.updatedAt),
+    );
   }
   return groups;
 }
