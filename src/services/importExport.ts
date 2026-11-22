@@ -216,9 +216,9 @@ export function buildGoodreadsCsvString(books: Book[], shelves: Shelf[]): string
         allShelves,
         '',
         exclusiveShelf,
+        b.review || '',
+        '',
         b.notes || '',
-        '',
-        '',
         b.status === 'finished' ? '1' : '0',
         '1',
       ];
@@ -393,6 +393,7 @@ function parseV3LegacyJson(
         shelfIds: [shelfId],
         title: item.title?.trim() || 'Untitled',
         author: item.author?.trim() || 'Unknown Author',
+        language: 'English',
         pageCount: 0,
         currentPage: 0,
         coverUrl,
@@ -546,15 +547,13 @@ function parseGoodreadsOrStoryGraphCsv(
       fromFlexibleDate(getCell(row, 'date read', 'last date read', 'dates read')) || undefined;
     const addedDate = fromFlexibleDate(getCell(row, 'date added'));
 
-    const rawReview = getCell(row, 'my review', 'review');
-    const privateNotes = getCell(row, 'private notes');
-    const combinedNotes = [
-      rawReview.replace(/<br\s*\/?>/gi, '\n'),
-      privateNotes,
-    ]
-      .filter(Boolean)
-      .join('\n\n')
-      .trim();
+    const rawReview = getCell(row, 'my review', 'review').replace(/<br\s*\/?>/gi, '\n').trim();
+    const privateNotes = getCell(row, 'private notes').trim();
+
+    const review = status === 'finished' && rawReview ? rawReview : undefined;
+    const combinedNotes = (
+      review ? privateNotes : [rawReview, privateNotes].filter(Boolean).join('\n\n')
+    ).trim();
 
     const rawShelvesCell = getCell(row, 'bookshelves', 'tags');
     const shelfNames = rawShelvesCell
@@ -596,6 +595,7 @@ function parseGoodreadsOrStoryGraphCsv(
       isbn,
       publishYear,
       publisher: getCell(row, 'publisher') || undefined,
+      language: 'English',
       pageCount,
       currentPage: status === 'finished' ? pageCount : 0,
       coverUrl: isbn ? buildOpenLibraryCoverByIsbn(isbn, 'L') : undefined,
@@ -603,6 +603,7 @@ function parseGoodreadsOrStoryGraphCsv(
       status,
       rating,
       dateFinished,
+      review,
       notes: combinedNotes,
       tags: shelfNames,
       addedAt: addedDate ? `${addedDate}T12:00:00.000Z` : now,

@@ -1,4 +1,4 @@
-import type { AvatarTheme, BookFormat, ReadingStatus } from '../types/library';
+import type { AvatarTheme, BookFormat, BookOwnership, ReadingStatus } from '../types/library';
 
 export const AVATAR_EMOJIS = [
   '🦉',
@@ -83,6 +83,59 @@ export const AVATAR_THEME_MAP: Record<
   },
 };
 
+export const BOOK_LANGUAGES = [
+  'English',
+  'French',
+  'Spanish',
+  'German',
+  'Italian',
+  'Portuguese',
+  'Japanese',
+  'Chinese',
+  'Dutch',
+  'Other',
+] as const;
+
+export function searchLangToBookLanguage(code?: string): string {
+  if (!code) return 'English';
+  const clean = code.trim().toLowerCase().replace(/^\/languages\//, '');
+  switch (clean) {
+    case 'eng':
+    case 'en':
+      return 'English';
+    case 'fre':
+    case 'fra':
+    case 'fr':
+      return 'French';
+    case 'spa':
+    case 'es':
+      return 'Spanish';
+    case 'ger':
+    case 'deu':
+    case 'de':
+      return 'German';
+    case 'ita':
+    case 'it':
+      return 'Italian';
+    case 'por':
+    case 'pt':
+      return 'Portuguese';
+    case 'jpn':
+    case 'ja':
+      return 'Japanese';
+    case 'chi':
+    case 'zho':
+    case 'zh':
+      return 'Chinese';
+    case 'dut':
+    case 'nld':
+    case 'nl':
+      return 'Dutch';
+    default:
+      return 'English';
+  }
+}
+
 export const STATUS_META: Record<
   ReadingStatus,
   {
@@ -147,6 +200,40 @@ export const BOOK_FORMAT_META: Record<
     shortLabel: 'Audiobook',
     badgeClass:
       'bg-violet-500/12 text-violet-700 dark:bg-violet-400/15 dark:text-violet-300 border-violet-500/20',
+  },
+};
+
+export const OWNERSHIP_META: Record<
+  BookOwnership,
+  {
+    label: string;
+    shortLabel: string;
+    badgeClass: string;
+  }
+> = {
+  owned: {
+    label: 'Owned',
+    shortLabel: 'Owned',
+    badgeClass:
+      'bg-emerald-500/10 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300 border-emerald-500/20',
+  },
+  library: {
+    label: 'Public Library',
+    shortLabel: 'Library',
+    badgeClass:
+      'bg-sky-500/12 text-sky-700 dark:bg-sky-400/15 dark:text-sky-300 border-sky-500/20',
+  },
+  borrowed: {
+    label: 'Borrowed',
+    shortLabel: 'Borrowed',
+    badgeClass:
+      'bg-orange-500/12 text-orange-700 dark:bg-orange-400/15 dark:text-orange-300 border-orange-500/20',
+  },
+  other: {
+    label: 'Other',
+    shortLabel: 'Other',
+    badgeClass:
+      'bg-slate-500/12 text-slate-700 dark:bg-slate-400/15 dark:text-slate-300 border-slate-500/20',
   },
 };
 

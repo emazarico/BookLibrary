@@ -30,14 +30,20 @@ function hashString(str: string): number {
 
 /**
  * Normalizes and validates book cover URLs.
- * Drops known dead placeholder URLs and appends ?default=false on Open Library covers
- * so missing covers emit an image error event rather than rendering a 1x1 blank GIF.
+ * Supports IndexedDB cover keys (`idb-cover:...`), inline data URLs, upgrades Google Books HTTP,
+ * drops known dead placeholder URLs, and appends ?default=false on Open Library covers.
  */
 export function sanitizeCoverUrl(url?: string | null): string | undefined {
   if (!url) return undefined;
   const trimmed = url.trim();
   if (!trimmed) return undefined;
   if (trimmed.includes('via.placeholder.com')) return undefined;
+  if (trimmed.startsWith('idb-cover:') && trimmed.length > 'idb-cover:'.length) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('data:image/')) {
+    return trimmed;
+  }
 
   let parsed: URL;
   try {
@@ -48,6 +54,13 @@ export function sanitizeCoverUrl(url?: string | null): string | undefined {
 
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     return undefined;
+  }
+
+  if (
+    parsed.hostname === 'books.google.com' ||
+    parsed.hostname.endsWith('.books.google.com')
+  ) {
+    parsed.protocol = 'https:';
   }
 
   if (parsed.hostname === 'covers.openlibrary.org') {

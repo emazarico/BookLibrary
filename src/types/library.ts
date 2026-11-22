@@ -4,6 +4,8 @@ export type ProfileRole = 'admin' | 'member';
 
 export type BookFormat = 'physical' | 'ebook' | 'audiobook';
 
+export type BookOwnership = 'owned' | 'library' | 'borrowed' | 'other';
+
 export type ProgressUnit = 'pages' | 'chapters' | 'duration';
 
 export type SearchLanguage = 'eng' | 'fre' | 'spa' | 'ger' | 'any';
@@ -18,6 +20,18 @@ export type AvatarTheme =
   | 'coral'
   | 'slate';
 
+export interface BookEditionOption {
+  key: string;
+  title: string;
+  language?: string;
+  publisher?: string;
+  publishYear?: number;
+  isbn?: string;
+  pageCount?: number;
+  format?: BookFormat;
+  coverUrl?: string;
+}
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -27,6 +41,7 @@ export interface UserProfile {
   pinHash: string | null;
   yearlyBookGoal: number;
   monthlyPageGoal: number;
+  badgeRewards?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;
@@ -54,6 +69,7 @@ export interface Book {
   isbn?: string;
   publishYear?: number;
   publisher?: string;
+  language?: string;
   pageCount: number;
   currentPage: number;
   progressUnit?: ProgressUnit;
@@ -63,11 +79,22 @@ export interface Book {
   currentMinutes?: number;
   coverUrl?: string;
   format?: BookFormat;
+  ownership?: BookOwnership;
+  ownershipNote?: string;
+  dueDate?: string;
+  lentTo?: string;
+  lentDate?: string;
   status: ReadingStatus;
   /** 0 to 5 in 0.5 increments; 0 means unrated */
   rating: number;
   dateStarted?: string;
   dateFinished?: string;
+  recommendedBy?: string;
+  wantToReadNote?: string;
+  review?: string;
+  synopsis?: string;
+  series?: string;
+  seriesIndex?: number;
   notes: string;
   tags: string[];
   openLibraryKey?: string;
@@ -133,6 +160,10 @@ export interface OpenLibrarySearchResult {
   isbn?: string;
   pageCount?: number;
   publisher?: string;
+  language?: string;
+  synopsis?: string;
+  source?: 'openlibrary' | 'googlebooks' | 'merged';
+  editions?: BookEditionOption[];
   subjects: string[];
 }
 

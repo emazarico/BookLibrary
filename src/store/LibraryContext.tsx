@@ -31,6 +31,7 @@ import type {
   Book,
   BookFormat,
   BookLibraryDatabase,
+  BookOwnership,
   DriveConfig,
   ProfileRole,
   ProgressUnit,
@@ -45,6 +46,7 @@ import { getHouseholdAdmins, isProfileAdmin } from '../utils/admin';
 import { sanitizeCoverUrl } from '../utils/cover';
 import { generateId, hashPin, verifyPin } from '../utils/crypto';
 import { createDemoHousehold } from '../utils/demoData';
+import { findBookDuplicates } from '../utils/duplicates';
 import { formatMinutesHuman } from '../utils/progress';
 
 export interface ToastMessage {
@@ -74,6 +76,7 @@ export interface UpdateProfileInput {
   newPin?: string | null;
   yearlyBookGoal?: number;
   monthlyPageGoal?: number;
+  badgeRewards?: Record<string, string>;
 }
 
 export interface BookInput {
@@ -83,6 +86,7 @@ export interface BookInput {
   isbn?: string;
   publishYear?: number;
   publisher?: string;
+  language?: string;
   pageCount: number;
   currentPage: number;
   progressUnit?: ProgressUnit;
@@ -92,10 +96,21 @@ export interface BookInput {
   currentMinutes?: number;
   coverUrl?: string;
   format?: BookFormat;
+  ownership?: BookOwnership;
+  ownershipNote?: string;
+  dueDate?: string;
+  lentTo?: string;
+  lentDate?: string;
   status: ReadingStatus;
   rating: number;
   dateStarted?: string;
   dateFinished?: string;
+  recommendedBy?: string;
+  wantToReadNote?: string;
+  review?: string;
+  synopsis?: string;
+  series?: string;
+  seriesIndex?: number;
   notes: string;
   tags: string[];
   openLibraryKey?: string;
@@ -113,6 +128,8 @@ export interface LogSessionInput {
   minuteReached?: number;
   note?: string;
   markFinished?: boolean;
+  finalRating?: number;
+  finalReview?: string;
 }
 
 interface LibraryContextValue {
@@ -167,10 +184,15 @@ interface LibraryContextValue {
   ) => void;
   deleteShelf: (shelfId: string) => void;
 
-  // Books
+  // Books & Household Recommendations
   addBook: (input: BookInput) => Book | null;
   updateBook: (bookId: string, updates: Partial<BookInput>) => void;
   deleteBook: (bookId: string) => void;
+  recommendBookToProfile: (
+    bookId: string,
+    targetProfileId: string,
+    note: string,
+  ) => { ok: boolean; error?: string };
 
   // Reading Logs
   logReadingSession: (input: LogSessionInput) => ReadingLog | null;
@@ -195,6 +217,11 @@ const LibraryContext = createContext<LibraryContextValue | null>(null);
 function sanitizeOptionalCount(value?: number): number | undefined {
   if (value === undefined || !Number.isFinite(value)) return undefined;
   return Math.max(0, Math.round(value));
+}
+
+function sanitizeSeriesIndex(value?: number): number | undefined {
+  if (value === undefined || !Number.isFinite(value) || value <= 0) return undefined;
+  return Math.round(value * 100) / 100;
 }
 
 export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -569,6 +596,8 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
             pinHash: updatedPinHash !== undefined ? updatedPinHash : p.pinHash,
             yearlyBookGoal: input.yearlyBookGoal ?? p.yearlyBookGoal,
             monthlyPageGoal: input.monthlyPageGoal ?? p.monthlyPageGoal,
+            badgeRewards:
+              input.badgeRewards !== undefined ? input.badgeRewards : p.badgeRewards,
             updatedAt: now,
           };
         }),
@@ -780,6 +809,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         isbn: input.isbn?.trim() || undefined,
         publishYear: input.publishYear,
         publisher: input.publisher?.trim() || undefined,
+        language: input.language?.trim() || 'English',
         pageCount: Math.max(0, Math.round(input.pageCount || 0)),
         currentPage: Math.max(0, Math.round(input.currentPage || 0)),
         progressUnit: input.progressUnit || 'pages',
@@ -789,10 +819,21 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         currentMinutes: sanitizeOptionalCount(input.currentMinutes),
         coverUrl: sanitizeCoverUrl(input.coverUrl),
         format: input.format || 'physical',
+        ownership: input.ownership,
+        ownershipNote: input.ownershipNote?.trim() || undefined,
+        dueDate: input.dueDate || undefined,
+        lentTo: input.lentTo?.trim() || undefined,
+        lentDate: input.lentDate || undefined,
         status: input.status,
         rating: Math.min(5, Math.max(0, Math.round((input.rating || 0) * 2) / 2)),
         dateStarted: input.dateStarted || undefined,
         dateFinished: input.dateFinished || undefined,
+        recommendedBy: input.recommendedBy?.trim() || undefined,
+        wantToReadNote: input.wantToReadNote?.trim() || undefined,
+        review: input.review?.trim() || undefined,
+        synopsis: input.synopsis?.trim() || undefined,
+        series: input.series?.trim() || undefined,
+        seriesIndex: sanitizeSeriesIndex(input.seriesIndex),
         notes: input.notes || '',
         tags: input.tags.map((t) => t.trim()).filter(Boolean),
         openLibraryKey: input.openLibraryKey,
@@ -818,9 +859,35 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ...updates,
             title: updates.title !== undefined ? updates.title.trim() || b.title : b.title,
             author: updates.author !== undefined ? updates.author.trim() || b.author : b.author,
+            language:
+              updates.language !== undefined
+                ? updates.language.trim() || 'English'
+                : b.language,
             coverUrl:
               updates.coverUrl !== undefined ? sanitizeCoverUrl(updates.coverUrl) : b.coverUrl,
             format: updates.format !== undefined ? updates.format : b.format,
+            ownership: 'ownership' in updates ? updates.ownership : b.ownership,
+            ownershipNote:
+              'ownershipNote' in updates
+                ? updates.ownershipNote?.trim() || undefined
+                : b.ownershipNote,
+            dueDate: 'dueDate' in updates ? updates.dueDate || undefined : b.dueDate,
+            lentTo: 'lentTo' in updates ? updates.lentTo?.trim() || undefined : b.lentTo,
+            lentDate: 'lentDate' in updates ? updates.lentDate || undefined : b.lentDate,
+            recommendedBy:
+              'recommendedBy' in updates
+                ? updates.recommendedBy?.trim() || undefined
+                : b.recommendedBy,
+            wantToReadNote:
+              'wantToReadNote' in updates
+                ? updates.wantToReadNote?.trim() || undefined
+                : b.wantToReadNote,
+            review: 'review' in updates ? updates.review?.trim() || undefined : b.review,
+            synopsis:
+              'synopsis' in updates ? updates.synopsis?.trim() || undefined : b.synopsis,
+            series: 'series' in updates ? updates.series?.trim() || undefined : b.series,
+            seriesIndex:
+              'seriesIndex' in updates ? sanitizeSeriesIndex(updates.seriesIndex) : b.seriesIndex,
             progressUnit:
               updates.progressUnit !== undefined ? updates.progressUnit : b.progressUnit,
             totalChapters:
@@ -880,6 +947,91 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
     },
     [addToast, commitDatabase],
+  );
+
+  const recommendBookToProfile = useCallback(
+    (bookId: string, targetProfileId: string, note: string): { ok: boolean; error?: string } => {
+      const currentDb = dbRef.current;
+      const sourceBook = currentDb.books.find((b) => b.id === bookId && !b.deletedAt);
+      const targetProfile = currentDb.profiles.find(
+        (p) => p.id === targetProfileId && !p.deletedAt,
+      );
+      const sender = currentDb.profiles.find((p) => p.id === activeProfileId && !p.deletedAt);
+
+      if (!sourceBook || !targetProfile) {
+        return { ok: false, error: 'Book or recipient profile not found.' };
+      }
+
+      const dupCheck = findBookDuplicates(
+        { title: sourceBook.title, author: sourceBook.author, isbn: sourceBook.isbn },
+        currentDb.books,
+        currentDb.profiles,
+        targetProfileId,
+      );
+
+      if (dupCheck.ownMatches.length > 0) {
+        const msg = `${targetProfile.name} already has "${sourceBook.title}" on their shelf.`;
+        addToast({ title: msg, tone: 'info' });
+        return { ok: false, error: msg };
+      }
+
+      const targetShelves = currentDb.shelves
+        .filter((s) => s.profileId === targetProfileId && !s.deletedAt)
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+
+      const now = new Date().toISOString();
+      const cleanTags = Array.from(
+        new Set([
+          ...sourceBook.tags.filter((t) => t.toLowerCase() !== 'wishlist'),
+          'wishlist',
+        ]),
+      );
+
+      const recommendedBook: Book = {
+        id: generateId('book'),
+        profileId: targetProfileId,
+        shelfIds: targetShelves[0] ? [targetShelves[0].id] : [],
+        title: sourceBook.title,
+        author: sourceBook.author,
+        isbn: sourceBook.isbn,
+        publishYear: sourceBook.publishYear,
+        publisher: sourceBook.publisher,
+        language: sourceBook.language || 'English',
+        pageCount: sourceBook.pageCount,
+        currentPage: 0,
+        progressUnit: sourceBook.progressUnit || 'pages',
+        totalChapters: sourceBook.totalChapters,
+        totalMinutes: sourceBook.totalMinutes,
+        coverUrl: sourceBook.coverUrl,
+        format: sourceBook.format || 'physical',
+        status: 'want-to-read',
+        rating: 0,
+        recommendedBy: sender?.name || 'Household Member',
+        wantToReadNote: note.trim() || undefined,
+        synopsis: sourceBook.synopsis,
+        series: sourceBook.series,
+        seriesIndex: sourceBook.seriesIndex,
+        notes: '',
+        tags: cleanTags,
+        openLibraryKey: sourceBook.openLibraryKey,
+        addedAt: now,
+        updatedAt: now,
+      };
+
+      commitDatabase((prev) => ({
+        ...prev,
+        books: [recommendedBook, ...prev.books],
+      }));
+
+      addToast({
+        title: `Recommended to ${targetProfile.name}`,
+        description: `Added "${sourceBook.title}" to ${targetProfile.name}'s Want to Read wishlist.`,
+        tone: 'success',
+      });
+
+      return { ok: true };
+    },
+    [activeProfileId, addToast, commitDatabase],
   );
 
   // --- Reading Logs ---
@@ -980,6 +1132,15 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 : nextChapter
               : b.currentChapter;
 
+          const resolvedRating =
+            shouldFinish && input.finalRating !== undefined && input.finalRating > 0
+              ? Math.min(5, Math.max(0, Math.round(input.finalRating * 2) / 2))
+              : b.rating;
+          const resolvedReview =
+            shouldFinish && input.finalReview?.trim()
+              ? input.finalReview.trim()
+              : b.review;
+
           return {
             ...b,
             status: nextStatus,
@@ -987,6 +1148,8 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
             currentPage: resolvedPage,
             currentMinutes: resolvedMinutes,
             currentChapter: resolvedChapters,
+            rating: resolvedRating,
+            review: resolvedReview,
             dateStarted: b.dateStarted || input.date,
             dateFinished: shouldFinish ? b.dateFinished || input.date : b.dateFinished,
             updatedAt: now,
@@ -1213,6 +1376,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     addBook,
     updateBook,
     deleteBook,
+    recommendBookToProfile,
     logReadingSession,
     updateReadingLog,
     deleteReadingLog,
