@@ -321,7 +321,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       addToast({
         title: 'Unsupported import file',
         description:
-          preview.warnings[0] || 'Expected BookLibrary JSON or Goodreads/StoryGraph CSV.',
+          preview.warnings[0] ||
+          'Expected BookLibrary JSON, Goodreads/StoryGraph/Audible CSV, Libby JSON/CSV, or Kindle Clippings (.txt).',
         tone: 'error',
       });
       return;
@@ -403,7 +404,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       <input
         ref={importInputRef}
         type="file"
-        accept=".json,.csv"
+        accept=".json,.csv,.txt"
         onChange={handleImportFileChange}
         className="hidden"
       />

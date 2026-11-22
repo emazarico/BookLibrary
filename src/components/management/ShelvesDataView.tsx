@@ -1,8 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowUp,
   Cloud,
+  Database,
   Download,
   Eye,
   EyeOff,
@@ -16,6 +17,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react';
+import { getStorageEngineInfo, type StorageEngineInfo } from '../../services/idbStorage';
 import {
   exportGoodreadsCsv,
   exportHouseholdJson,
@@ -34,6 +36,12 @@ interface ShelvesDataViewProps {
   onOpenPdfExport: () => void;
 }
 
+function formatByteCount(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExport }) => {
   const {
     db,
@@ -48,6 +56,7 @@ export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExpor
     loadSampleHousehold,
     resetAllLocalData,
     legacyV3Raw,
+    storageEngine,
     syncStatus,
     driveConfig,
     addToast,
@@ -61,8 +70,19 @@ export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExpor
   const [cloudModalOpen, setCloudModalOpen] = useState(false);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [storageInfo, setStorageInfo] = useState<StorageEngineInfo | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getStorageEngineInfo(db).then((info) => {
+      if (active) setStorageInfo(info);
+    });
+    return () => {
+      active = false;
+    };
+  }, [db]);
 
   const handleCreateShelf = (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,7 +118,9 @@ export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExpor
     if (preview.format === 'unknown') {
       addToast({
         title: 'Unsupported import file',
-        description: preview.warnings[0] || 'Expected BookLibrary JSON or Goodreads/StoryGraph CSV.',
+        description:
+          preview.warnings[0] ||
+          'Expected BookLibrary JSON, Goodreads/StoryGraph/Audible CSV, Libby JSON/CSV, or Kindle Clippings (.txt).',
         tone: 'error',
       });
       return;
@@ -113,6 +135,8 @@ export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExpor
     if (file) void processImportedFile(file);
   };
 
+  const effectiveEngine = storageInfo?.engine || storageEngine;
+
   return (
     <div className="space-y-8 animate-fade-slide">
       {/* Header */}
@@ -122,8 +146,8 @@ export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExpor
             Shelves, Import & Sync
           </h1>
           <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
-            Organize {activeProfile?.name}&apos;s shelves, import from Goodreads/StoryGraph/v3, or
-            back up your household library.
+            Organize {activeProfile?.name}&apos;s shelves, import from Goodreads, StoryGraph, Audible,
+            Libby, or Kindle, or back up your household library.
           </p>
         </div>
 
@@ -262,7 +286,11 @@ export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExpor
                     <button
                       type="button"
                       onClick={() => {
-                        if (window.confirm(`Delete shelf "${shelf.name}"? Books will remain in your library.`)) {
+                        if (
+                          window.confirm(
+                            `Delete shelf "${shelf.name}"? Books will remain in your library.`,
+                          )
+                        ) {
                           deleteShelf(shelf.id);
                         }
                       }}
@@ -288,7 +316,8 @@ export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExpor
               Import Books & Backups
             </h2>
             <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-              Supports Goodreads CSV, StoryGraph CSV, BookLibrary JSON, and Legacy v3 JSON.
+              Supports Goodreads CSV, StoryGraph CSV, Audible CSV, Libby Timeline JSON/CSV, Kindle
+              &ldquo;My Clippings.txt&rdquo;, BookLibrary JSON, and Legacy v3 JSON.
             </p>
           </div>
 
@@ -309,7 +338,7 @@ export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExpor
             <input
               ref={fileInputRef}
               type="file"
-              accept=".json,.csv"
+              accept=".json,.csv,.txt"
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) void processImportedFile(file);
@@ -319,7 +348,7 @@ export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExpor
             />
             <Upload className="w-8 h-8 mx-auto text-amber-600 dark:text-amber-400 mb-2" />
             <p className="text-sm font-semibold text-stone-800 dark:text-stone-100">
-              Drop a CSV or JSON file here, or click to browse
+              Drop a CSV, JSON, or Clippings .txt file here, or click to browse
             </p>
             <p className="text-xs text-stone-400 mt-1">
               Preview counts and choose Merge or Replace before anything changes
@@ -370,7 +399,7 @@ export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExpor
                     Export Library to PDF / Printable HTML
                   </p>
                   <p className="text-[11px] text-stone-600 dark:text-stone-400">
-                    Filter by reader, date range, format, tags, and include charts or timeline
+                    Themes, posters, checklists, book club handouts &amp; customizable reports
                   </p>
                 </div>
               </div>
@@ -453,11 +482,29 @@ export const ShelvesDataView: React.FC<ShelvesDataViewProps> = ({ onOpenPdfExpor
 
       {/* Household Tools / Reset */}
       <section className="rounded-3xl bg-white dark:bg-[#171A23] border border-stone-200/90 dark:border-stone-800 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100">
-            Workspace Tools & Reset
-          </h3>
-          <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100">
+              Workspace Tools & Reset
+            </h3>
+            <span
+              title={
+                storageInfo?.quotaBytes
+                  ? `Estimated quota: ${formatByteCount(storageInfo.quotaBytes)}`
+                  : undefined
+              }
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                effectiveEngine === 'indexeddb'
+                  ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-amber-500/12 text-amber-800 dark:text-amber-300'
+              }`}
+            >
+              <Database className="w-3 h-3" />
+              {effectiveEngine === 'indexeddb' ? 'IndexedDB' : 'localStorage'}
+              {storageInfo ? ` · ${formatByteCount(storageInfo.estimatedBytes)}` : ''}
+            </span>
+          </div>
+          <p className="text-xs text-stone-500 dark:text-stone-400">
             Manage household roles/PINs, load sample readers, or clear local browser storage.
           </p>
         </div>

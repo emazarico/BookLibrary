@@ -50,6 +50,7 @@ export const SearchView: React.FC = () => {
   const [loadingEditionsKey, setLoadingEditionsKey] = useState<string | null>(null);
 
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerMode, setScannerMode] = useState<'single' | 'batch'>('single');
   const [prefillBook, setPrefillBook] = useState<OpenLibrarySearchResult | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
 
@@ -236,7 +237,7 @@ export const SearchView: React.FC = () => {
           <span className="text-xs font-semibold uppercase tracking-wider text-stone-400">
             Open Library + Google Books
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setAdvancedOpen((o) => !o)}
@@ -250,10 +251,23 @@ export const SearchView: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => setScannerOpen(true)}
+              onClick={() => {
+                setScannerMode('single');
+                setScannerOpen(true);
+              }}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 text-xs font-semibold transition-colors cursor-pointer"
             >
               <ScanBarcode className="w-3.5 h-3.5" /> Scan ISBN
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setScannerMode('batch');
+                setScannerOpen(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-800 dark:text-indigo-300 text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <Layers className="w-3.5 h-3.5" /> Batch Scan
             </button>
           </div>
         </div>
@@ -579,6 +593,7 @@ export const SearchView: React.FC = () => {
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
         onDetected={(isbn) => void handleIsbnDetected(isbn)}
+        initialMode={scannerMode}
       />
 
       <BookFormModal

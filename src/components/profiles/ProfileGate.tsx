@@ -52,7 +52,9 @@ export const ProfileGate: React.FC = () => {
       if (preview.format === 'unknown') {
         addToast({
           title: 'Unrecognized backup format',
-          description: preview.warnings[0] || 'Choose a valid JSON or Goodreads/StoryGraph CSV.',
+          description:
+            preview.warnings[0] ||
+            'Choose a valid JSON, Goodreads/StoryGraph/Audible/Libby CSV, or Kindle Clippings .txt file.',
           tone: 'error',
         });
       } else {
@@ -256,7 +258,7 @@ export const ProfileGate: React.FC = () => {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".json,.csv"
+            accept=".json,.csv,.txt"
             onChange={(e) => void handleFileChange(e)}
             className="hidden"
           />
