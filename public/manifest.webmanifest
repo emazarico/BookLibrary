@@ -1,0 +1,17 @@
+{
+  "name": "BookLibrary",
+  "short_name": "BookLibrary",
+  "description": "Multi-reader household book library, reading log timeline, and Google Drive sync tracker.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#FAF8F5",
+  "theme_color": "#b45309",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
