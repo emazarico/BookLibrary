@@ -1,5 +1,13 @@
-import type { OpenLibrarySearchResult, SearchLanguage } from '../types/library';
+import type {
+  BookEditionOption,
+  BookFormat,
+  OpenLibrarySearchResult,
+  SearchLanguage,
+} from '../types/library';
 import { buildOpenLibraryCoverById, buildOpenLibraryCoverByIsbn, sanitizeCoverUrl } from '../utils/cover';
+import { cleanGoodreadsIsbn } from '../utils/csv';
+import { searchLangToBookLanguage } from '../utils/themes';
+import { searchGoogleBooks } from './googleBooks';
 
 export interface OpenLibrarySearchParams {
   query: string;
@@ -19,6 +27,22 @@ interface RawEditionDoc {
   cover_i?: number;
   isbn?: string[];
   language?: string[];
+  publisher?: string[];
+  publish_year?: number[];
+  number_of_pages_median?: number;
+}
+
+interface RawWorkEditionEntry {
+  key?: string;
+  title?: string;
+  covers?: number[];
+  isbn_13?: string[];
+  isbn_10?: string[];
+  languages?: Array<{ key?: string }>;
+  publishers?: string[];
+  publish_date?: string;
+  number_of_pages?: number;
+  physical_format?: string;
 }
 
 interface RawOpenLibraryDoc {
@@ -68,6 +92,14 @@ function editionMatchesLang(ed: RawEditionDoc, preferredLang: SearchLanguage): b
     const clean = entry.trim().toLowerCase();
     return clean === preferredLang || clean.endsWith(`/${preferredLang}`);
   });
+}
+
+function inferFormatFromPhysical(physicalFormat?: string): BookFormat | undefined {
+  if (!physicalFormat) return undefined;
+  const lower = physicalFormat.toLowerCase();
+  if (/audio|cd\b|mp3|spoken/.test(lower)) return 'audiobook';
+  if (/ebook|e-book|kindle|electronic|epub|pdf/.test(lower)) return 'ebook';
+  return 'physical';
 }
 
 function mapDocToResult(
@@ -127,6 +159,36 @@ function mapDocToResult(
   const alternateCoverUrls = candidates.slice(0, 5);
   const coverUrl = alternateCoverUrls[0];
 
+  const sourceEditions = (langEditions.length > 0 ? langEditions : editions).slice(0, 12);
+  const mappedEditions: BookEditionOption[] = sourceEditions.map((ed, idx) => {
+    const edIsbn = pickBestIsbn(ed.isbn);
+    const edCover = ed.cover_i
+      ? sanitizeCoverUrl(buildOpenLibraryCoverById(ed.cover_i, 'L'))
+      : edIsbn
+        ? sanitizeCoverUrl(buildOpenLibraryCoverByIsbn(edIsbn, 'L'))
+        : undefined;
+    return {
+      key: ed.key || `${doc.key || title}-ed-${idx}`,
+      title: ed.title?.trim() || title,
+      language: ed.language?.[0] ? searchLangToBookLanguage(ed.language[0]) : undefined,
+      publisher: Array.isArray(ed.publisher) ? ed.publisher[0] : undefined,
+      publishYear: Array.isArray(ed.publish_year) ? ed.publish_year[0] : undefined,
+      isbn: edIsbn,
+      pageCount:
+        typeof ed.number_of_pages_median === 'number' && ed.number_of_pages_median > 0
+          ? ed.number_of_pages_median
+          : undefined,
+      coverUrl: edCover,
+    };
+  });
+
+  const resolvedLang =
+    preferredWithCover?.language?.[0]
+      ? searchLangToBookLanguage(preferredWithCover.language[0])
+      : preferredLang !== 'any'
+        ? searchLangToBookLanguage(preferredLang)
+        : 'English';
+
   return {
     key: doc.key || `${title}::${authors[0]}`,
     title,
@@ -142,6 +204,9 @@ function mapDocToResult(
         : undefined,
     publisher:
       Array.isArray(doc.publisher) && doc.publisher.length > 0 ? doc.publisher[0] : undefined,
+    language: resolvedLang,
+    source: 'openlibrary',
+    editions: mappedEditions,
     subjects: Array.isArray(doc.subject) ? doc.subject.slice(0, 6) : [],
   };
 }
@@ -173,7 +238,7 @@ export async function searchOpenLibrary(
   url.searchParams.set('limit', String(limit));
   url.searchParams.set(
     'fields',
-    'key,title,author_name,first_publish_year,cover_i,cover_edition_key,isbn,number_of_pages_median,publisher,subject,editions,editions.key,editions.title,editions.cover_i,editions.isbn,editions.language',
+    'key,title,author_name,first_publish_year,cover_i,cover_edition_key,isbn,number_of_pages_median,publisher,subject,editions,editions.key,editions.title,editions.cover_i,editions.isbn,editions.language,editions.publisher,editions.publish_year,editions.number_of_pages_median',
   );
 
   const yearClause =
@@ -239,12 +304,144 @@ export async function searchOpenLibrary(
   return results;
 }
 
+export async function fetchWorkEditions(
+  workKey: string,
+  signal?: AbortSignal,
+): Promise<BookEditionOption[]> {
+  if (!workKey.startsWith('/works/')) {
+    return [];
+  }
+
+  try {
+    const res = await fetch(`https://openlibrary.org${workKey}/editions.json?limit=20`, {
+      signal,
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { entries?: RawWorkEditionEntry[] };
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+
+    return entries.map((entry, idx) => {
+      const isbn = pickBestIsbn([...(entry.isbn_13 || []), ...(entry.isbn_10 || [])]);
+      const coverUrl =
+        Array.isArray(entry.covers) && entry.covers[0] > 0
+          ? sanitizeCoverUrl(buildOpenLibraryCoverById(entry.covers[0], 'L'))
+          : isbn
+            ? sanitizeCoverUrl(buildOpenLibraryCoverByIsbn(isbn, 'L'))
+            : undefined;
+      const yearMatch = entry.publish_date ? /\b(1\d{3}|20\d{2})\b/.exec(entry.publish_date) : null;
+      const langKey = entry.languages?.[0]?.key;
+
+      return {
+        key: entry.key || `${workKey}-edition-${idx}`,
+        title: entry.title?.trim() || 'Untitled Edition',
+        language: langKey ? searchLangToBookLanguage(langKey) : undefined,
+        publisher: entry.publishers?.[0],
+        publishYear: yearMatch ? Number(yearMatch[1]) : undefined,
+        isbn,
+        pageCount:
+          typeof entry.number_of_pages === 'number' && entry.number_of_pages > 0
+            ? entry.number_of_pages
+            : undefined,
+        format: inferFormatFromPhysical(entry.physical_format),
+        coverUrl,
+      };
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw err;
+    }
+    return [];
+  }
+}
+
+function mergeTwoResults(
+  primary: OpenLibrarySearchResult,
+  secondary: OpenLibrarySearchResult,
+): OpenLibrarySearchResult {
+  const combinedCovers: string[] = [];
+  for (const url of [
+    ...(primary.alternateCoverUrls || []),
+    primary.coverUrl,
+    secondary.coverUrl,
+    ...(secondary.alternateCoverUrls || []),
+  ]) {
+    if (url && !combinedCovers.includes(url)) {
+      combinedCovers.push(url);
+    }
+  }
+
+  return {
+    ...primary,
+    coverUrl: primary.coverUrl || secondary.coverUrl,
+    alternateCoverUrls: combinedCovers.slice(0, 6),
+    isbn: primary.isbn || secondary.isbn,
+    pageCount: primary.pageCount || secondary.pageCount,
+    publisher: primary.publisher || secondary.publisher,
+    publishYear: primary.publishYear || secondary.publishYear,
+    language: primary.language || secondary.language,
+    synopsis: primary.synopsis || secondary.synopsis,
+    source: 'merged',
+    subjects:
+      primary.subjects.length > 0 ? primary.subjects : secondary.subjects,
+  };
+}
+
+export async function searchBooksCombined(
+  params: OpenLibrarySearchParams,
+): Promise<OpenLibrarySearchResult[]> {
+  const [olSettled, gbSettled] = await Promise.allSettled([
+    searchOpenLibrary(params),
+    searchGoogleBooks(params),
+  ]);
+
+  if (params.signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+
+  const olResults = olSettled.status === 'fulfilled' ? olSettled.value : [];
+  const gbResults = gbSettled.status === 'fulfilled' ? gbSettled.value : [];
+
+  if (olSettled.status === 'rejected' && gbResults.length === 0) {
+    throw olSettled.reason;
+  }
+
+  const merged: OpenLibrarySearchResult[] = olResults.map((item) => ({ ...item }));
+  const isbnIndex = new Map<string, number>();
+  const taIndex = new Map<string, number>();
+
+  merged.forEach((item, idx) => {
+    const cleanIsbn = cleanGoodreadsIsbn(item.isbn);
+    if (cleanIsbn) isbnIndex.set(cleanIsbn, idx);
+    taIndex.set(`${item.title.trim().toLowerCase()}::${item.author.trim().toLowerCase()}`, idx);
+  });
+
+  for (const gb of gbResults) {
+    const cleanIsbn = cleanGoodreadsIsbn(gb.isbn);
+    const taKey = `${gb.title.trim().toLowerCase()}::${gb.author.trim().toLowerCase()}`;
+    const existingIdx =
+      (cleanIsbn ? isbnIndex.get(cleanIsbn) : undefined) ?? taIndex.get(taKey);
+
+    if (existingIdx !== undefined) {
+      merged[existingIdx] = mergeTwoResults(merged[existingIdx], gb);
+    } else {
+      const nextIdx = merged.length;
+      merged.push(gb);
+      if (cleanIsbn) isbnIndex.set(cleanIsbn, nextIdx);
+      taIndex.set(taKey, nextIdx);
+    }
+  }
+
+  return merged;
+}
+
 export async function lookupBookByIsbn(
   rawIsbn: string,
   signal?: AbortSignal,
 ): Promise<OpenLibrarySearchResult | null> {
   const cleanIsbn = rawIsbn.replace(/[^0-9Xx]/g, '').toUpperCase();
   if (!cleanIsbn) return null;
+
+  let olMatch: OpenLibrarySearchResult | null = null;
 
   try {
     const bibKey = `ISBN:${cleanIsbn}`;
@@ -261,7 +458,7 @@ export async function lookupBookByIsbn(
         const coverUrl =
           sanitizeCoverUrl(rawCover) || buildOpenLibraryCoverByIsbn(cleanIsbn, 'L');
 
-        return {
+        olMatch = {
           key: entry.url || `isbn:${cleanIsbn}`,
           title: entry.title.trim(),
           author: authors[0] || 'Unknown Author',
@@ -275,21 +472,37 @@ export async function lookupBookByIsbn(
               ? entry.number_of_pages
               : undefined,
           publisher: entry.publishers?.[0]?.name,
+          language: 'English',
+          source: 'openlibrary',
           subjects: entry.subjects?.map((s) => s.name).filter((n): n is string => Boolean(n)).slice(0, 6) || [],
         };
       }
     }
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') throw err;
-    // Fallback to search.json below
   }
 
-  const searchMatches = await searchOpenLibrary({
+  if (!olMatch) {
+    const searchMatches = await searchOpenLibrary({
+      query: cleanIsbn,
+      mode: 'isbn',
+      language: 'any',
+      limit: 1,
+      signal,
+    }).catch(() => [] as OpenLibrarySearchResult[]);
+    olMatch = searchMatches[0] ?? null;
+  }
+
+  const gbFallback = await searchGoogleBooks({
     query: cleanIsbn,
     mode: 'isbn',
     language: 'any',
     limit: 1,
     signal,
-  });
-  return searchMatches[0] ?? null;
+  }).catch(() => [] as OpenLibrarySearchResult[]);
+
+  if (olMatch && gbFallback[0]) {
+    return mergeTwoResults(olMatch, gbFallback[0]);
+  }
+  return olMatch ?? gbFallback[0] ?? null;
 }
