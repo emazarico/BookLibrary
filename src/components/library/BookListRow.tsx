@@ -6,6 +6,7 @@ import {
   Globe,
   Headphones,
   Plus,
+  RotateCcw,
   Star,
   Tablet,
   UserCheck,
@@ -50,6 +51,7 @@ export const BookListRow: React.FC<BookListRowProps> = ({
       (book.ownership === 'library' || book.ownership === 'borrowed') &&
       book.dueDate < todayIso(),
   );
+  const pastReadCount = book.readHistory?.length ?? 0;
 
   return (
     <div
@@ -75,6 +77,14 @@ export const BookListRow: React.FC<BookListRowProps> = ({
             <span className={`w-1.5 h-1.5 rounded-full ${statusMeta.dotClass}`} />
             {statusMeta.shortLabel}
           </span>
+          {pastReadCount > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/12 text-amber-800 dark:text-amber-300 border border-amber-500/20">
+              <RotateCcw className="w-2.5 h-2.5" />
+              {book.status === 'reading'
+                ? `Re-read #${pastReadCount + 1}`
+                : `${pastReadCount + (book.status === 'finished' ? 1 : 0)}× read`}
+            </span>
+          )}
           {format === 'audiobook' && (
             <span
               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${BOOK_FORMAT_META.audiobook.badgeClass}`}

@@ -16,6 +16,10 @@ import {
 import { exportReadingLogsCsv } from '../../services/importExport';
 import { useLibrary } from '../../store/LibraryContext';
 import type { Book } from '../../types/library';
+import {
+  buildDailyActivityHeatmap,
+  computeAnalyticsBreakdown,
+} from '../../utils/analytics';
 import { computeReadingBadges } from '../../utils/badges';
 import { formatMinutesHuman, formatReadingLogBadge } from '../../utils/progress';
 import {
@@ -29,8 +33,10 @@ import { BookCover } from '../common/BookCover';
 import { StarRating } from '../common/StarRating';
 import { BookDetailDrawer } from '../library/BookDetailDrawer';
 import { BookFormModal } from '../library/BookFormModal';
+import { BreakdownCharts } from './BreakdownCharts';
 import { LogSessionModal } from './LogSessionModal';
 import { MonthlyChart } from './MonthlyChart';
+import { ReadingHeatmap } from './ReadingHeatmap';
 
 interface TimelineViewProps {
   onOpenPdfExport: () => void;
@@ -76,6 +82,16 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ onOpenPdfExport }) =
   const summary = useMemo(
     () => computeReadingSummary(profileBooks, profileLogs, yearFilter, includeBackfill),
     [profileBooks, profileLogs, yearFilter, includeBackfill],
+  );
+
+  const heatmapData = useMemo(
+    () => buildDailyActivityHeatmap(profileBooks, profileLogs, yearFilter),
+    [profileBooks, profileLogs, yearFilter],
+  );
+
+  const breakdownData = useMemo(
+    () => computeAnalyticsBreakdown(profileBooks, profileLogs, yearFilter),
+    [profileBooks, profileLogs, yearFilter],
   );
 
   const badges = useMemo(
@@ -156,7 +172,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ onOpenPdfExport }) =
             Reading Timeline &amp; Log
           </h1>
           <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
-            Monthly pages read, reading streaks, and chronological completion history.
+            Monthly pages read, daily heatmap, format &amp; genre analytics, and milestones.
           </p>
         </div>
 
@@ -396,6 +412,12 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ onOpenPdfExport }) =
           onSelectMonth={setSelectedMonth}
         />
       </section>
+
+      {/* P2.2 Daily Reading Calendar Heatmap */}
+      <ReadingHeatmap data={heatmapData} yearFilter={yearFilter} />
+
+      {/* P2.3 Genre, Format, Rating & Pace Breakdown Charts */}
+      <BreakdownCharts breakdown={breakdownData} />
 
       {/* Milestones & Reading Badges (P3.3) */}
       <section className="p-5 rounded-3xl bg-white dark:bg-[#171A23] border border-stone-200/90 dark:border-stone-800 space-y-4">

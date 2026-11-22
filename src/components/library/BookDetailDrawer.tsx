@@ -11,6 +11,7 @@ import {
   Headphones,
   MessageSquareQuote,
   Plus,
+  RotateCcw,
   Send,
   Star,
   Tablet,
@@ -59,6 +60,9 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
     profileLogs,
     updateBook,
     deleteBook,
+    startReread,
+    addReadHistorySpan,
+    deleteReadHistorySpan,
     recommendBookToProfile,
     addToast,
   } = useLibrary();
@@ -74,6 +78,12 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
   const [recommendTargetId, setRecommendTargetId] = useState('');
   const [recommendNote, setRecommendNote] = useState('');
 
+  const [rereadFormOpen, setRereadFormOpen] = useState(false);
+  const [pastStartDraft, setPastStartDraft] = useState('');
+  const [pastFinishDraft, setPastFinishDraft] = useState(todayIso);
+  const [pastRatingDraft, setPastRatingDraft] = useState(0);
+  const [pastNoteDraft, setPastNoteDraft] = useState('');
+
   const cleanCover = useResolvedCover(book?.coverUrl);
 
   useEffect(() => {
@@ -87,11 +97,28 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
     setLentToDraft(book.lentTo || '');
     setLentDateDraft(book.lentDate || todayIso());
     setRecommendNote('');
+    setRereadFormOpen(false);
+    setPastStartDraft('');
+    setPastFinishDraft(todayIso());
+    setPastRatingDraft(book.rating || 0);
+    setPastNoteDraft('');
     const others = activeProfiles.filter((p) => p.id !== book.profileId);
     setRecommendTargetId((prev) =>
       prev && others.some((o) => o.id === prev) ? prev : others[0]?.id || '',
     );
-  }, [book?.id, book?.status, book?.review, book?.recommendedBy, book?.wantToReadNote, book?.ownershipNote, book?.lentTo, book?.lentDate, book?.profileId, activeProfiles]);
+  }, [
+    book?.id,
+    book?.status,
+    book?.review,
+    book?.recommendedBy,
+    book?.wantToReadNote,
+    book?.ownershipNote,
+    book?.lentTo,
+    book?.lentDate,
+    book?.profileId,
+    book?.rating,
+    activeProfiles,
+  ]);
 
   useEffect(() => {
     if (!book) return;
@@ -123,6 +150,7 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
       book.dueDate < today,
   );
   const otherHouseholdReaders = activeProfiles.filter((p) => p.id !== book.profileId);
+  const readHistory = book.readHistory || [];
 
   const handleStatusChange = (status: ReadingStatus) => {
     updateBook(book.id, {
@@ -204,6 +232,21 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
     });
   };
 
+  const handleSavePastRead = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pastFinishDraft && !pastStartDraft) return;
+    addReadHistorySpan(book.id, {
+      startedAt: pastStartDraft || undefined,
+      finishedAt: pastFinishDraft || undefined,
+      rating: pastRatingDraft > 0 ? pastRatingDraft : undefined,
+      notes: pastNoteDraft.trim() || undefined,
+      format: book.format,
+    });
+    setRereadFormOpen(false);
+    setPastStartDraft('');
+    setPastNoteDraft('');
+  };
+
   const handleSendRecommendation = (e: React.FormEvent) => {
     e.preventDefault();
     if (!recommendTargetId) return;
@@ -239,6 +282,8 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
   const showWantToReadBox =
     book.status === 'want-to-read' || Boolean(book.recommendedBy || book.wantToReadNote);
   const showReviewBox = book.status === 'finished' || Boolean(book.review) || reviewExpanded;
+  const showReadHistory =
+    readHistory.length > 0 || book.status === 'finished' || book.status === 'reading';
 
   return createPortal(
     <div
@@ -292,6 +337,13 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/20">
                       {book.series}
                       {book.seriesIndex ? ` #${book.seriesIndex}` : ''}
+                    </span>
+                  )}
+
+                  {readHistory.length > 0 && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/12 text-amber-800 dark:text-amber-300 border border-amber-500/20">
+                      <RotateCcw className="w-2.5 h-2.5" />
+                      {readHistory.length + (book.status === 'finished' ? 1 : 0)} total reads
                     </span>
                   )}
 
@@ -350,11 +402,22 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto overscroll-contain custom-scrollbar p-6 space-y-6">
-          {/* Status Switcher */}
+          {/* Status Switcher + Start Re-Read */}
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 mb-2">
-              Reading Status
-            </p>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                Reading Status
+              </p>
+              {book.status === 'finished' && (
+                <button
+                  type="button"
+                  onClick={() => startReread(book.id)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Start Re-Read
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {(['want-to-read', 'reading', 'finished', 'dnf'] as ReadingStatus[]).map((st) => {
                 const meta = STATUS_META[st];
@@ -504,6 +567,122 @@ export const BookDetailDrawer: React.FC<BookDetailDrawerProps> = ({
               </div>
             )}
           </div>
+
+          {/* Read History & Past Re-Reads (P2.4) */}
+          {showReadHistory && (
+            <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-900/60 border border-stone-200/70 dark:border-stone-800 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 flex items-center gap-1.5">
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                  Read History ({readHistory.length})
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setRereadFormOpen((v) => !v)}
+                  className="text-xs font-semibold text-amber-700 dark:text-amber-300 hover:underline cursor-pointer"
+                >
+                  {rereadFormOpen ? 'Cancel' : '+ Log Past Read'}
+                </button>
+              </div>
+
+              {readHistory.length === 0 ? (
+                <p className="text-xs text-stone-400">
+                  Use <strong>Start Re-Read</strong> when finished or <strong>+ Log Past Read</strong>{' '}
+                  to record earlier read dates.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {readHistory.map((span, idx) => (
+                    <div
+                      key={span.id}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white dark:bg-stone-900 border border-stone-200/70 dark:border-stone-800 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-stone-800 dark:text-stone-200">
+                          Read #{idx + 1}:{' '}
+                          <span className="font-normal text-stone-500 dark:text-stone-400">
+                            {span.startedAt ? `${span.startedAt} → ` : ''}
+                            {span.finishedAt || 'Unknown date'}
+                          </span>
+                        </p>
+                        {(span.rating || span.notes) && (
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400 truncate mt-0.5">
+                            {span.rating ? `${span.rating} ★` : ''}
+                            {span.rating && span.notes ? ' · ' : ''}
+                            {span.notes || ''}
+                          </p>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        aria-label={`Remove read #${idx + 1}`}
+                        onClick={() => deleteReadHistorySpan(book.id, span.id)}
+                        className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {rereadFormOpen && (
+                <form
+                  onSubmit={handleSavePastRead}
+                  className="pt-2 border-t border-stone-200/70 dark:border-stone-800 space-y-2.5"
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-semibold uppercase tracking-wider text-stone-400 mb-1">
+                        Started (opt.)
+                      </label>
+                      <input
+                        type="date"
+                        value={pastStartDraft}
+                        onChange={(e) => setPastStartDraft(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-xs outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold uppercase tracking-wider text-stone-400 mb-1">
+                        Finished
+                      </label>
+                      <input
+                        type="date"
+                        value={pastFinishDraft}
+                        onChange={(e) => setPastFinishDraft(e.target.value)}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-xs outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-stone-500">Rating:</span>
+                    <StarRating
+                      value={pastRatingDraft}
+                      onChange={setPastRatingDraft}
+                      size="sm"
+                      showNumeric
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    value={pastNoteDraft}
+                    onChange={(e) => setPastNoteDraft(e.target.value)}
+                    placeholder="Short note about this past read (optional)…"
+                    className="w-full px-3 py-1.5 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-xs outline-none"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold cursor-pointer"
+                    >
+                      Save Past Read
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          )}
 
           {/* Ownership, Library Due Date & Physical Lending Tracker (P3.2) */}
           <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-900/60 border border-stone-200/70 dark:border-stone-800 space-y-3">
