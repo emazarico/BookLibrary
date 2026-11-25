@@ -31,7 +31,7 @@ interface GoogleTokenResponse {
 }
 
 interface GoogleTokenClient {
-  requestAccessToken: (overrideConfig?: { prompt?: string }) => void;
+  requestAccessToken: (overrideConfig?: { prompt?: string; hint?: string }) => void;
 }
 
 declare global {
@@ -42,6 +42,7 @@ declare global {
           initTokenClient: (config: {
             client_id: string;
             scope: string;
+            hint?: string;
             callback: (resp: GoogleTokenResponse) => void;
             error_callback?: (err: { type?: string; message?: string }) => void;
           }) => GoogleTokenClient;
@@ -161,7 +162,8 @@ export function loadGoogleIdentityScript(): Promise<void> {
 
 export async function requestDriveAccessToken(
   clientId: string,
-  prompt: '' | 'consent' | 'select_account' = '',
+  prompt: '' | 'none' | 'consent' | 'select_account' = '',
+  hint?: string | null,
 ): Promise<{ accessToken: string; expiresIn: number }> {
   const trimmedId = clientId.trim();
   if (!trimmedId) {
@@ -175,6 +177,11 @@ export async function requestDriveAccessToken(
 
   await loadGoogleIdentityScript();
 
+  const normalizedHint =
+    prompt !== 'select_account' && typeof hint === 'string' && hint.trim()
+      ? hint.trim()
+      : undefined;
+
   return new Promise((resolve, reject) => {
     const oauth2 = window.google?.accounts?.oauth2;
     if (!oauth2) {
@@ -185,6 +192,7 @@ export async function requestDriveAccessToken(
     const client = oauth2.initTokenClient({
       client_id: trimmedId,
       scope: DRIVE_SCOPES,
+      ...(normalizedHint ? { hint: normalizedHint } : {}),
       callback: (resp) => {
         if (resp.error || !resp.access_token) {
           const raw = resp.error_description || resp.error || 'Google authorization failed.';
@@ -202,7 +210,10 @@ export async function requestDriveAccessToken(
       },
     });
 
-    client.requestAccessToken({ prompt });
+    client.requestAccessToken({
+      prompt,
+      ...(normalizedHint ? { hint: normalizedHint } : {}),
+    });
   });
 }
 

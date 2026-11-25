@@ -20,13 +20,16 @@ import {
 } from '../services/idbStorage';
 import { applyImport, type ImportPreview } from '../services/importExport';
 import {
+  clearCachedDriveToken,
   clearLocalDatabase,
   detectLegacyV3Data,
+  loadCachedDriveToken,
   loadDriveConfig,
   loadInitialTheme,
   loadLocalDatabase,
   loadSavedActiveProfileId,
   persistActiveProfileSession,
+  saveCachedDriveToken,
   saveDatabaseWithFallback,
   saveDriveConfig,
   saveTheme,
@@ -218,7 +221,7 @@ interface LibraryContextValue {
   loadSampleHousehold: () => Promise<void>;
   resetAllLocalData: () => void;
   updateDriveConfig: (partial: Partial<DriveConfig>) => void;
-  connectGoogleDrive: (promptMode?: '' | 'consent' | 'select_account') => Promise<boolean>;
+  connectGoogleDrive: (promptMode?: '' | 'none' | 'consent' | 'select_account') => Promise<boolean>;
   syncNow: () => Promise<void>;
   disconnectGoogleDrive: () => void;
 }
@@ -250,9 +253,17 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [pendingPinProfileId, setPendingPinProfileId] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>(() => loadInitialTheme());
   const [driveConfig, setDriveConfig] = useState<DriveConfig>(() => loadDriveConfig());
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [initialCachedToken] = useState(() => loadCachedDriveToken(driveConfig.clientId));
+  const [accessToken, setAccessToken] = useState<string | null>(
+    () => initialCachedToken?.accessToken ?? null,
+  );
+  const [idbHydrated, setIdbHydrated] = useState<boolean>(() => !isIndexedDbAvailable());
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() =>
-    typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'local',
+    typeof navigator !== 'undefined' && !navigator.onLine
+      ? 'offline'
+      : initialCachedToken
+        ? 'synced'
+        : 'local',
   );
   const [syncError, setSyncError] = useState<string | null>(null);
   const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState(false);
@@ -267,6 +278,8 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   driveConfigRef.current = driveConfig;
   const accessTokenRef = useRef(accessToken);
   accessTokenRef.current = accessToken;
+  const tokenExpiresAtRef = useRef<number | null>(initialCachedToken?.expiresAt ?? null);
+  const initialAutoSyncedRef = useRef(false);
   const syncTimerRef = useRef<number | null>(null);
 
   const dismissToast = useCallback((id: string) => {
@@ -294,26 +307,30 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setStorageEngine('indexeddb');
 
     void (async () => {
-      const idbDb = await loadDatabaseFromIdb();
-      if (cancelled) return;
+      try {
+        const idbDb = await loadDatabaseFromIdb();
+        if (cancelled) return;
 
-      const current = dbRef.current;
-      if (idbDb) {
-        const currentEmpty = current.profiles.length === 0 && current.books.length === 0;
-        const idbNewer = Date.parse(idbDb.updatedAt) > Date.parse(current.updatedAt);
-        if (currentEmpty || idbNewer) {
-          setDb(idbDb);
-          const currentActiveId = activeProfileIdRef.current;
-          const savedId = loadSavedActiveProfileId();
-          const candidateId = currentActiveId || savedId;
-          if (candidateId && idbDb.profiles.some((p) => p.id === candidateId && !p.deletedAt)) {
-            setActiveProfileId(candidateId);
-          } else if (currentActiveId) {
-            setActiveProfileId(null);
+        const current = dbRef.current;
+        if (idbDb) {
+          const currentEmpty = current.profiles.length === 0 && current.books.length === 0;
+          const idbNewer = Date.parse(idbDb.updatedAt) > Date.parse(current.updatedAt);
+          if (currentEmpty || idbNewer) {
+            setDb(idbDb);
+            const currentActiveId = activeProfileIdRef.current;
+            const savedId = loadSavedActiveProfileId();
+            const candidateId = currentActiveId || savedId;
+            if (candidateId && idbDb.profiles.some((p) => p.id === candidateId && !p.deletedAt)) {
+              setActiveProfileId(candidateId);
+            } else if (currentActiveId) {
+              setActiveProfileId(null);
+            }
           }
+        } else if (current.profiles.length > 0 || current.books.length > 0) {
+          await saveDatabaseToIdb(current);
         }
-      } else if (current.profiles.length > 0 || current.books.length > 0) {
-        await saveDatabaseToIdb(current);
+      } finally {
+        if (!cancelled) setIdbHydrated(true);
       }
     })();
 
@@ -385,19 +402,37 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setSyncStatus('offline');
         return;
       }
+      if (tokenExpiresAtRef.current !== null && Date.now() >= tokenExpiresAtRef.current - 60_000) {
+        clearCachedDriveToken();
+        setAccessToken(null);
+        accessTokenRef.current = null;
+        tokenExpiresAtRef.current = null;
+        setSyncStatus('token_expired');
+        setSyncError('Google Drive session expired. Please reconnect.');
+        if (!silent) {
+          addToast({
+            title: 'Google Drive token expired',
+            description: 'Reconnect in Cloud Sync to upload pending changes.',
+            tone: 'error',
+          });
+        }
+        return;
+      }
       setSyncStatus('syncing');
       setSyncError(null);
       try {
         const result = await syncWithDrive(dbRef.current, driveConfigRef.current, token);
         setDb(result.mergedDb);
         persistSnapshot(result.mergedDb);
-        const updatedConfig: DriveConfig = {
-          ...driveConfigRef.current,
-          fileId: result.fileId,
-          lastSyncedAt: result.syncedAt,
-        };
-        setDriveConfig(updatedConfig);
-        saveDriveConfig(updatedConfig);
+        setDriveConfig((prev) => {
+          const updatedConfig: DriveConfig = {
+            ...prev,
+            fileId: result.fileId,
+            lastSyncedAt: result.syncedAt,
+          };
+          saveDriveConfig(updatedConfig);
+          return updatedConfig;
+        });
         setHasUnsyncedChanges(false);
         setSyncStatus('synced');
         if (!silent) {
@@ -405,7 +440,10 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       } catch (err) {
         if (err instanceof DriveAuthExpiredError) {
+          clearCachedDriveToken();
           setAccessToken(null);
+          accessTokenRef.current = null;
+          tokenExpiresAtRef.current = null;
           setSyncStatus('token_expired');
           setSyncError(err.message);
           if (!silent) {
@@ -427,6 +465,18 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     },
     [addToast, persistSnapshot],
   );
+
+  useEffect(() => {
+    if (!idbHydrated || initialAutoSyncedRef.current) return;
+    initialAutoSyncedRef.current = true;
+    const token = accessTokenRef.current;
+    if (!token) return;
+    if (tokenExpiresAtRef.current !== null && Date.now() >= tokenExpiresAtRef.current - 60_000) {
+      return;
+    }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    void runSyncWithToken(token, true);
+  }, [idbHydrated, runSyncWithToken]);
 
   const scheduleAutoSync = useCallback(() => {
     if (syncTimerRef.current) {
@@ -1440,6 +1490,11 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setDb(empty);
     setActiveProfileId(null);
     setPendingPinProfileId(null);
+    setAccessToken(null);
+    accessTokenRef.current = null;
+    tokenExpiresAtRef.current = null;
+    setSyncStatus('local');
+    setSyncError(null);
     setHasUnsyncedChanges(false);
     addToast({ title: 'All local data cleared', tone: 'info' });
   }, [addToast]);
@@ -1450,6 +1505,15 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   // --- Google Drive Sync ---
   const updateDriveConfig = useCallback((partial: Partial<DriveConfig>) => {
+    if (
+      partial.clientId !== undefined &&
+      partial.clientId.trim() !== driveConfigRef.current.clientId.trim()
+    ) {
+      clearCachedDriveToken();
+      setAccessToken(null);
+      accessTokenRef.current = null;
+      tokenExpiresAtRef.current = null;
+    }
     setDriveConfig((prev) => {
       const next = { ...prev, ...partial };
       saveDriveConfig(next);
@@ -1458,7 +1522,7 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const connectGoogleDrive = useCallback(
-    async (promptMode: '' | 'consent' | 'select_account' = ''): Promise<boolean> => {
+    async (promptMode: '' | 'none' | 'consent' | 'select_account' = ''): Promise<boolean> => {
       const clientId = driveConfigRef.current.clientId.trim();
       if (!clientId) {
         addToast({
@@ -1472,13 +1536,23 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setSyncStatus('connecting');
       setSyncError(null);
       try {
-        const { accessToken: token } = await requestDriveAccessToken(clientId, promptMode);
+        const hint =
+          promptMode === 'select_account' ? undefined : driveConfigRef.current.userEmail;
+        const { accessToken: token, expiresIn } = await requestDriveAccessToken(
+          clientId,
+          promptMode,
+          hint,
+        );
+        const expiresAt = Date.now() + Math.max(0, expiresIn) * 1000;
         setAccessToken(token);
         accessTokenRef.current = token;
+        tokenExpiresAtRef.current = expiresAt;
+        saveCachedDriveToken(token, expiresIn, clientId, driveConfigRef.current.userEmail);
 
         const email = await fetchUserEmail(token);
         if (email) {
           updateDriveConfig({ userEmail: email });
+          saveCachedDriveToken(token, expiresIn, clientId, email);
         }
 
         await runSyncWithToken(token, false);
@@ -1495,16 +1569,26 @@ export const LibraryProvider: React.FC<{ children: React.ReactNode }> = ({ child
   );
 
   const syncNow = useCallback(async () => {
-    if (accessTokenRef.current) {
-      await runSyncWithToken(accessTokenRef.current, false);
+    const token = accessTokenRef.current;
+    const tokenValid =
+      Boolean(token) &&
+      (tokenExpiresAtRef.current === null || Date.now() < tokenExpiresAtRef.current - 60_000);
+    if (tokenValid && token) {
+      await runSyncWithToken(token, false);
     } else {
+      clearCachedDriveToken();
+      setAccessToken(null);
+      accessTokenRef.current = null;
+      tokenExpiresAtRef.current = null;
       await connectGoogleDrive('');
     }
   }, [connectGoogleDrive, runSyncWithToken]);
 
   const disconnectGoogleDrive = useCallback(() => {
+    clearCachedDriveToken();
     setAccessToken(null);
     accessTokenRef.current = null;
+    tokenExpiresAtRef.current = null;
     updateDriveConfig({ fileId: null, userEmail: null, lastSyncedAt: null });
     setSyncStatus('local');
     setSyncError(null);

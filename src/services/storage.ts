@@ -9,6 +9,7 @@ import {
 export const STORAGE_KEYS = {
   DB: 'booklibrary_db',
   DRIVE_CONFIG: 'booklibrary_drive_config',
+  DRIVE_TOKEN: 'booklibrary_drive_token',
   THEME: 'booklibrary_theme',
   ACTIVE_PROFILE_PERSISTENT: 'booklibrary_active_profile',
   ACTIVE_PROFILE_SESSION: 'booklibrary_active_profile_session',
@@ -21,7 +22,15 @@ export const STORAGE_KEYS = {
 } as const;
 
 export const DEFAULT_DRIVE_FILE_NAME = 'booklibrary-db.json';
+export const DRIVE_TOKEN_EXPIRY_BUFFER_MS = 60_000;
 const LOCAL_STORAGE_MIRROR_LIMIT = 4_000_000;
+
+export interface CachedDriveToken {
+  accessToken: string;
+  expiresAt: number;
+  clientId: string;
+  userEmail?: string | null;
+}
 
 function readWithLegacyFallback(primaryKey: string, legacyKey: string): string | null {
   const current = localStorage.getItem(primaryKey);
@@ -122,6 +131,69 @@ export async function saveDatabaseWithFallback(
   };
 }
 
+export function clearCachedDriveToken(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.DRIVE_TOKEN);
+  } catch {
+    // ignore
+  }
+}
+
+export function saveCachedDriveToken(
+  accessToken: string,
+  expiresInSeconds: number,
+  clientId: string,
+  userEmail?: string | null,
+): void {
+  const trimmedClientId = clientId.trim();
+  if (!accessToken || !trimmedClientId) return;
+  try {
+    const payload: CachedDriveToken = {
+      accessToken,
+      expiresAt: Date.now() + Math.max(0, expiresInSeconds) * 1000,
+      clientId: trimmedClientId,
+      userEmail: userEmail ?? null,
+    };
+    localStorage.setItem(STORAGE_KEYS.DRIVE_TOKEN, JSON.stringify(payload));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function loadCachedDriveToken(
+  expectedClientId: string,
+  nowMs = Date.now(),
+): CachedDriveToken | null {
+  const trimmedClientId = expectedClientId.trim();
+  if (!trimmedClientId) return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.DRIVE_TOKEN);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CachedDriveToken>;
+    if (
+      !parsed ||
+      typeof parsed.accessToken !== 'string' ||
+      !parsed.accessToken ||
+      typeof parsed.expiresAt !== 'number' ||
+      !Number.isFinite(parsed.expiresAt) ||
+      parsed.clientId !== trimmedClientId ||
+      parsed.expiresAt - nowMs <= DRIVE_TOKEN_EXPIRY_BUFFER_MS
+    ) {
+      clearCachedDriveToken();
+      return null;
+    }
+    return {
+      accessToken: parsed.accessToken,
+      expiresAt: parsed.expiresAt,
+      clientId: parsed.clientId,
+      userEmail: parsed.userEmail ?? null,
+    };
+  } catch {
+    clearCachedDriveToken();
+    return null;
+  }
+}
+
 export function clearLocalDatabase(): void {
   try {
     localStorage.removeItem(STORAGE_KEYS.DB);
@@ -133,6 +205,7 @@ export function clearLocalDatabase(): void {
   } catch {
     // ignore
   }
+  clearCachedDriveToken();
   void clearDatabaseFromIdb();
 }
 
